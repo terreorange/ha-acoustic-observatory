@@ -18,6 +18,14 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.3.0] - 2026-07-26
+
+### Added
+
+- Persistent SQLite storage for received spectra in the Home Assistant add-on.
+- `/api/history` endpoint returning recent spectrum measurements.
+- Waterfall history view with selectable windows for 5 minutes, 10 minutes, 30 minutes, and 1 hour.
+
 ## [0.2.3] - 2026-07-26
 
 ### Fixed
