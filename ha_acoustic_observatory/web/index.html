@@ -17,9 +17,7 @@
         --bad: #c62828;
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
       body {
         margin: 0;
@@ -34,7 +32,8 @@
       }
 
       header,
-      .panel-title-row {
+      .panel-title-row,
+      .session-actions {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
@@ -46,15 +45,8 @@
         padding-bottom: 16px;
       }
 
-      h1 {
-        font-size: 1.55rem;
-        margin: 0;
-      }
-
-      h2 {
-        font-size: 1rem;
-        margin: 0 0 12px;
-      }
+      h1 { font-size: 1.55rem; margin: 0; }
+      h2 { font-size: 1rem; margin: 0 0 12px; }
 
       .status {
         align-items: center;
@@ -100,9 +92,7 @@
         overflow-wrap: anywhere;
       }
 
-      .panel {
-        margin-top: 16px;
-      }
+      .panel { margin-top: 16px; }
 
       .notice {
         border: 1px solid var(--border);
@@ -117,15 +107,72 @@
         color: var(--bad);
       }
 
-      select {
+      select,
+      input,
+      button {
         background: Canvas;
         border: 1px solid var(--border);
         border-radius: 6px;
         color: CanvasText;
         font: inherit;
         min-height: 34px;
-        padding: 4px 28px 4px 10px;
+        padding: 4px 10px;
       }
+
+      button {
+        cursor: pointer;
+        font-weight: 650;
+      }
+
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
+
+      button.danger {
+        border-color: color-mix(in srgb, var(--bad) 48%, transparent);
+        color: var(--bad);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .session-form {
+        display: grid;
+        grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .sessions-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .session-row {
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(90px, auto)) auto;
+        padding: 10px;
+      }
+
+      .session-row.active {
+        border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
+      }
+
+      .session-meta {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      a { color: var(--accent); }
 
       svg {
         display: block;
@@ -144,32 +191,11 @@
       }
 
       .axis,
-      .grid-line {
-        stroke: var(--border);
-        stroke-width: 1;
-      }
-
-      .tick-label {
-        fill: var(--muted);
-        font-size: 11px;
-      }
-
-      .spectrum-area {
-        fill: var(--accent-soft);
-      }
-
-      .spectrum-line {
-        fill: none;
-        stroke: var(--accent);
-        stroke-linejoin: round;
-        stroke-width: 2;
-      }
-
-      .dominant-line {
-        stroke: var(--warn);
-        stroke-dasharray: 4 4;
-        stroke-width: 2;
-      }
+      .grid-line { stroke: var(--border); stroke-width: 1; }
+      .tick-label { fill: var(--muted); font-size: 11px; }
+      .spectrum-area { fill: var(--accent-soft); }
+      .spectrum-line { fill: none; stroke: var(--accent); stroke-linejoin: round; stroke-width: 2; }
+      .dominant-line { stroke: var(--warn); stroke-dasharray: 4 4; stroke-width: 2; }
 
       .legend {
         color: var(--muted);
@@ -180,21 +206,23 @@
         margin-top: 8px;
       }
 
-      @media (max-width: 720px) {
-        main {
-          padding: 16px;
-        }
+      @media (max-width: 760px) {
+        main { padding: 16px; }
 
         header,
-        .panel-title-row {
+        .panel-title-row,
+        .session-actions {
           align-items: flex-start;
           flex-direction: column;
         }
 
-        svg,
-        canvas {
-          height: 260px;
+        .session-form,
+        .session-row {
+          grid-template-columns: 1fr;
         }
+
+        svg,
+        canvas { height: 260px; }
       }
     </style>
   </head>
@@ -209,22 +237,13 @@
       </header>
 
       <section class="grid">
-        <div class="tile">
-          <div class="label">Topic MQTT</div>
-          <div id="topic" class="value">-</div>
-        </div>
-        <div class="tile">
-          <div class="label">Messages recus</div>
-          <div id="messages" class="value">0</div>
-        </div>
-        <div class="tile">
-          <div class="label">Derniere mesure</div>
-          <div id="last-update" class="value">-</div>
-        </div>
-        <div class="tile">
-          <div class="label">Frequence dominante</div>
-          <div id="dominant-frequency" class="value">-</div>
-        </div>
+        <div class="tile"><div class="label">Topic MQTT</div><div id="topic" class="value">-</div></div>
+        <div class="tile"><div class="label">Messages recus</div><div id="messages" class="value">0</div></div>
+        <div class="tile"><div class="label">Derniere mesure</div><div id="last-update" class="value">-</div></div>
+        <div class="tile"><div class="label">Frequence dominante</div><div id="dominant-frequency" class="value">-</div></div>
+        <div class="tile"><div class="label">Session active</div><div id="active-session" class="value">-</div></div>
+        <div class="tile"><div class="label">Score nuisance</div><div id="nuisance-score" class="value">-</div></div>
+        <div class="tile"><div class="label">Signature proche</div><div id="best-match" class="value">-</div></div>
       </section>
 
       <section class="panel">
@@ -239,8 +258,7 @@
       <section class="panel">
         <div class="panel-title-row">
           <h2>Waterfall historique</h2>
-          <label class="label">
-            Fenetre
+          <label class="label">Fenetre
             <select id="history-window">
               <option value="5">5 min</option>
               <option value="10" selected>10 min</option>
@@ -257,6 +275,19 @@
         </div>
       </section>
 
+      <section class="panel">
+        <div class="session-actions">
+          <h2>Campagnes de mesure</h2>
+          <button id="stop-session" class="danger" disabled>Arreter la session</button>
+        </div>
+        <div class="session-form">
+          <input id="session-label" placeholder="Ex. piece calme, bureau, nuisance audible" />
+          <input id="session-notes" placeholder="Note facultative" />
+          <button id="start-session" class="primary">Demarrer</button>
+        </div>
+        <div id="sessions-list" class="sessions-list"></div>
+      </section>
+
       <div id="notice" class="notice">En attente des premieres donnees du capteur.</div>
     </main>
 
@@ -267,11 +298,21 @@
       const messagesEl = document.getElementById("messages");
       const lastUpdateEl = document.getElementById("last-update");
       const dominantFrequencyEl = document.getElementById("dominant-frequency");
+      const activeSessionEl = document.getElementById("active-session");
+      const nuisanceScoreEl = document.getElementById("nuisance-score");
+      const bestMatchEl = document.getElementById("best-match");
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
       const waterfallEl = document.getElementById("waterfall");
       const historyWindowEl = document.getElementById("history-window");
       const historyCountEl = document.getElementById("history-count");
+      const sessionLabelEl = document.getElementById("session-label");
+      const sessionNotesEl = document.getElementById("session-notes");
+      const startSessionEl = document.getElementById("start-session");
+      const stopSessionEl = document.getElementById("stop-session");
+      const sessionsListEl = document.getElementById("sessions-list");
+
+      let activeSessionId = null;
 
       function formatTime(timestamp) {
         if (!timestamp) return "-";
@@ -283,6 +324,13 @@
         if (seconds < 2) return "a l'instant";
         if (seconds < 60) return `${seconds} s`;
         return `${Math.round(seconds / 60)} min`;
+      }
+
+      function formatDuration(seconds) {
+        const value = Number(seconds || 0);
+        if (value < 60) return `${value} s`;
+        if (value < 3600) return `${Math.round(value / 60)} min`;
+        return `${(value / 3600).toFixed(1)} h`;
       }
 
       function setStatus(state) {
@@ -306,15 +354,12 @@
 
       function svgEl(name, attributes = {}) {
         const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-        for (const [key, value] of Object.entries(attributes)) {
-          element.setAttribute(key, value);
-        }
+        for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
         return element;
       }
 
       function drawChart(points, dominantFrequency) {
         chartEl.replaceChildren();
-
         const width = 900;
         const height = 320;
         const margin = { top: 18, right: 24, bottom: 34, left: 52 };
@@ -325,88 +370,35 @@
         const maxMagnitude = Math.max(1, ...points.map((point) => point.magnitude));
 
         chartEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
-
-        const x = (frequency) =>
-          margin.left + ((frequency - minFrequency) / (maxFrequency - minFrequency)) * plotWidth;
-        const y = (magnitude) =>
-          margin.top + plotHeight - (magnitude / maxMagnitude) * plotHeight;
+        const x = (frequency) => margin.left + ((frequency - minFrequency) / (maxFrequency - minFrequency)) * plotWidth;
+        const y = (magnitude) => margin.top + plotHeight - (magnitude / maxMagnitude) * plotHeight;
 
         for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
           const yy = margin.top + plotHeight - ratio * plotHeight;
-          chartEl.appendChild(svgEl("line", {
-            x1: margin.left,
-            y1: yy,
-            x2: margin.left + plotWidth,
-            y2: yy,
-            class: "grid-line",
-          }));
+          chartEl.appendChild(svgEl("line", { x1: margin.left, y1: yy, x2: margin.left + plotWidth, y2: yy, class: "grid-line" }));
         }
 
-        chartEl.appendChild(svgEl("line", {
-          x1: margin.left,
-          y1: margin.top + plotHeight,
-          x2: margin.left + plotWidth,
-          y2: margin.top + plotHeight,
-          class: "axis",
-        }));
-
-        chartEl.appendChild(svgEl("line", {
-          x1: margin.left,
-          y1: margin.top,
-          x2: margin.left,
-          y2: margin.top + plotHeight,
-          class: "axis",
-        }));
+        chartEl.appendChild(svgEl("line", { x1: margin.left, y1: margin.top + plotHeight, x2: margin.left + plotWidth, y2: margin.top + plotHeight, class: "axis" }));
+        chartEl.appendChild(svgEl("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotHeight, class: "axis" }));
 
         for (const frequency of [20, 50, 100, 150, 200, 250]) {
-          const xx = x(frequency);
-          chartEl.appendChild(svgEl("text", {
-            x: xx,
-            y: height - 8,
-            "text-anchor": "middle",
-            class: "tick-label",
-          })).textContent = `${frequency} Hz`;
+          chartEl.appendChild(svgEl("text", { x: x(frequency), y: height - 8, "text-anchor": "middle", class: "tick-label" })).textContent = `${frequency} Hz`;
         }
 
         for (const ratio of [0, 0.5, 1]) {
-          chartEl.appendChild(svgEl("text", {
-            x: 8,
-            y: y(maxMagnitude * ratio) + 4,
-            class: "tick-label",
-          })).textContent = `${Math.round(maxMagnitude * ratio)}`;
+          chartEl.appendChild(svgEl("text", { x: 8, y: y(maxMagnitude * ratio) + 4, class: "tick-label" })).textContent = `${Math.round(maxMagnitude * ratio)}`;
         }
 
         if (!points.length) return;
+        const linePoints = points.map((point) => `${x(point.frequency).toFixed(1)},${y(point.magnitude).toFixed(1)}`).join(" ");
+        const areaPoints = [`${x(points[0].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`, linePoints, `${x(points[points.length - 1].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`].join(" ");
 
-        const linePoints = points
-          .map((point) => `${x(point.frequency).toFixed(1)},${y(point.magnitude).toFixed(1)}`)
-          .join(" ");
-
-        const areaPoints = [
-          `${x(points[0].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`,
-          linePoints,
-          `${x(points[points.length - 1].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`,
-        ].join(" ");
-
-        chartEl.appendChild(svgEl("polygon", {
-          points: areaPoints,
-          class: "spectrum-area",
-        }));
-
-        chartEl.appendChild(svgEl("polyline", {
-          points: linePoints,
-          class: "spectrum-line",
-        }));
+        chartEl.appendChild(svgEl("polygon", { points: areaPoints, class: "spectrum-area" }));
+        chartEl.appendChild(svgEl("polyline", { points: linePoints, class: "spectrum-line" }));
 
         if (dominantFrequency) {
           const xx = x(dominantFrequency);
-          chartEl.appendChild(svgEl("line", {
-            x1: xx,
-            y1: margin.top,
-            x2: xx,
-            y2: margin.top + plotHeight,
-            class: "dominant-line",
-          }));
+          chartEl.appendChild(svgEl("line", { x1: xx, y1: margin.top, x2: xx, y2: margin.top + plotHeight, class: "dominant-line" }));
         }
       }
 
@@ -429,7 +421,6 @@
         context.clearRect(0, 0, width, height);
         context.fillStyle = getComputedStyle(document.body).backgroundColor;
         context.fillRect(0, 0, width, height);
-
         historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
 
         if (!items.length) {
@@ -439,15 +430,8 @@
           return;
         }
 
-        const frequencies = [...new Set(items.flatMap((item) =>
-          item.points.map((point) => point.frequency)
-        ))].sort((a, b) => a - b);
-
-        const maxMagnitude = Math.max(
-          1,
-          ...items.flatMap((item) => item.points.map((point) => point.magnitude))
-        );
-
+        const frequencies = [...new Set(items.flatMap((item) => item.points.map((point) => point.frequency)))].sort((a, b) => a - b);
+        const maxMagnitude = Math.max(1, ...items.flatMap((item) => item.points.map((point) => point.magnitude)));
         const left = 50 * dpr;
         const right = 12 * dpr;
         const top = 10 * dpr;
@@ -460,23 +444,15 @@
         items.forEach((item, rowIndex) => {
           const byFrequency = new Map(item.points.map((point) => [point.frequency, point.magnitude]));
           const y = top + rowIndex * rowHeight;
-
           frequencies.forEach((frequency, columnIndex) => {
-            const value = byFrequency.get(frequency) || 0;
-            context.fillStyle = colorForRatio(value / maxMagnitude);
-            context.fillRect(
-              left + columnIndex * columnWidth,
-              y,
-              Math.ceil(columnWidth),
-              Math.ceil(rowHeight)
-            );
+            context.fillStyle = colorForRatio((byFrequency.get(frequency) || 0) / maxMagnitude);
+            context.fillRect(left + columnIndex * columnWidth, y, Math.ceil(columnWidth), Math.ceil(rowHeight));
           });
         });
 
-        context.strokeStyle = colorMixCanvas("CanvasText", 0.18);
+        context.strokeStyle = getComputedStyle(document.body).color.replace("rgb(", "rgba(").replace(")", ", 0.18)");
         context.lineWidth = dpr;
         context.strokeRect(left, top, plotWidth, plotHeight);
-
         context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
         context.font = `${11 * dpr}px system-ui, sans-serif`;
         context.textAlign = "center";
@@ -491,36 +467,90 @@
         context.fillText(formatTime(items[items.length - 1].captured_at), 4 * dpr, top + plotHeight);
       }
 
-      function colorMixCanvas(token, alpha) {
-        const color = getComputedStyle(document.body).color;
-        return color.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+      function updateSignature(state) {
+        const signature = state.signature || {};
+        const nuisanceScore = signature.nuisance_score;
+        const nuisanceMatch = signature.nuisance_match;
+        const bestMatch = signature.best_match;
+
+        nuisanceScoreEl.textContent = nuisanceScore === null || nuisanceScore === undefined
+          ? "-"
+          : `${nuisanceScore.toFixed(1)} %`;
+        bestMatchEl.textContent = bestMatch
+          ? `${bestMatch.label} (${bestMatch.similarity.toFixed(1)} %)`
+          : "-";
+
+        if (nuisanceMatch) {
+          nuisanceScoreEl.title = `Reference : ${nuisanceMatch.label}`;
+        } else {
+          nuisanceScoreEl.title = "Creez une session nommee nuisance ou entrepot pour activer ce score.";
+        }
+      }
+
+      function updateSessionState(state) {
+        const session = state.active_session;
+        activeSessionId = session ? session.id : null;
+        activeSessionEl.textContent = session ? session.label : "-";
+        startSessionEl.disabled = Boolean(session);
+        stopSessionEl.disabled = !session;
       }
 
       function updateNotice(state) {
         noticeEl.className = "notice";
+        if (state.error) { noticeEl.classList.add("error"); noticeEl.textContent = state.error; return; }
+        if (!state.connected) { noticeEl.textContent = "Connexion au broker MQTT en cours."; return; }
+        if (state.message_count === 0) { noticeEl.textContent = "MQTT est connecte. En attente du premier spectre publie par l'Atom Echo."; return; }
+        if (state.stale) { noticeEl.textContent = `Dernier spectre recu il y a ${formatAge(state.age_seconds)}.`; return; }
+        noticeEl.textContent = "Spectre recu en temps reel. Les campagnes et signatures se construisent automatiquement.";
+      }
 
-        if (state.error) {
-          noticeEl.classList.add("error");
-          noticeEl.textContent = state.error;
+      function renderSessions(sessions) {
+        sessionsListEl.replaceChildren();
+
+        if (!sessions.length) {
+          const empty = document.createElement("div");
+          empty.className = "session-meta";
+          empty.textContent = "Aucune campagne enregistree pour l'instant.";
+          sessionsListEl.appendChild(empty);
           return;
         }
 
-        if (!state.connected) {
-          noticeEl.textContent = "Connexion au broker MQTT en cours.";
-          return;
-        }
+        for (const session of sessions) {
+          const row = document.createElement("div");
+          row.className = `session-row${session.active ? " active" : ""}`;
 
-        if (state.message_count === 0) {
-          noticeEl.textContent = "MQTT est connecte. En attente du premier spectre publie par l'Atom Echo.";
-          return;
-        }
+          const title = document.createElement("div");
+          title.innerHTML = `<strong>${escapeHtml(session.label)}</strong><div class="session-meta">${formatTime(session.started_at)} - ${session.active ? "en cours" : formatDuration(session.duration_seconds)}</div>`;
 
-        if (state.stale) {
-          noticeEl.textContent = `Dernier spectre recu il y a ${formatAge(state.age_seconds)}.`;
-          return;
-        }
+          const samples = document.createElement("div");
+          samples.innerHTML = `<div class="label">Mesures</div><div>${session.sample_count}</div>`;
 
-        noticeEl.textContent = "Spectre recu en temps reel. L'historique se construit automatiquement.";
+          const dominant = document.createElement("div");
+          dominant.innerHTML = `<div class="label">Moy. Hz</div><div>${session.average_dominant_frequency ? session.average_dominant_frequency.toFixed(1) : "-"}</div>`;
+
+          const signature = document.createElement("div");
+          signature.innerHTML = `<div class="label">Signature</div><div>${session.has_signature ? "OK" : "attente"}</div>`;
+
+          const action = document.createElement("div");
+          if (session.active) {
+            action.textContent = "Session active";
+            action.className = "session-meta";
+          } else {
+            const link = document.createElement("a");
+            link.href = `api/sessions/${session.id}/export.csv`;
+            link.textContent = "CSV";
+            action.appendChild(link);
+          }
+
+          row.append(title, samples, dominant, signature, action);
+          sessionsListEl.appendChild(row);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, (char) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+        }[char]));
       }
 
       async function refreshState() {
@@ -531,29 +561,31 @@
 
         setStatus(state);
         updateNotice(state);
+        updateSessionState(state);
+        updateSignature(state);
 
         topicEl.textContent = state.topic || "-";
         messagesEl.textContent = state.message_count || 0;
-        lastUpdateEl.textContent = state.last_message_at
-          ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})`
-          : "-";
-        dominantFrequencyEl.textContent = spectrum.dominant_frequency
-          ? `${spectrum.dominant_frequency.toFixed(1)} Hz`
-          : "-";
-
+        lastUpdateEl.textContent = state.last_message_at ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})` : "-";
+        dominantFrequencyEl.textContent = spectrum.dominant_frequency ? `${spectrum.dominant_frequency.toFixed(1)} Hz` : "-";
         drawChart(points, spectrum.dominant_frequency);
       }
 
       async function refreshHistory() {
-        const minutes = historyWindowEl.value;
-        const response = await fetch(`api/history?minutes=${minutes}`);
+        const response = await fetch(`api/history?minutes=${historyWindowEl.value}`);
         const history = await response.json();
         drawWaterfall(history.items || []);
       }
 
+      async function refreshSessions() {
+        const response = await fetch("api/sessions");
+        const payload = await response.json();
+        renderSessions(payload.sessions || []);
+      }
+
       async function refresh() {
         try {
-          await Promise.all([refreshState(), refreshHistory()]);
+          await Promise.all([refreshState(), refreshHistory(), refreshSessions()]);
         } catch (error) {
           statusDotEl.className = "dot bad";
           statusTextEl.textContent = "Interface deconnectee";
@@ -562,11 +594,34 @@
         }
       }
 
+      async function startSession() {
+        const label = sessionLabelEl.value.trim();
+        if (!label) { sessionLabelEl.focus(); return; }
+        const response = await fetch("api/sessions/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label, notes: sessionNotesEl.value.trim() }),
+        });
+        if (!response.ok) throw new Error((await response.json()).error || "Impossible de demarrer la session");
+        sessionLabelEl.value = "";
+        sessionNotesEl.value = "";
+        await refresh();
+      }
+
+      async function stopSession() {
+        if (!activeSessionId) return;
+        const response = await fetch(`api/sessions/${activeSessionId}/stop`, { method: "POST" });
+        if (!response.ok) throw new Error((await response.json()).error || "Impossible d'arreter la session");
+        await refresh();
+      }
+
+      startSessionEl.addEventListener("click", () => startSession().catch((error) => alert(error.message)));
+      stopSessionEl.addEventListener("click", () => stopSession().catch((error) => alert(error.message)));
       historyWindowEl.addEventListener("change", refreshHistory);
       window.addEventListener("resize", refreshHistory);
 
       refresh();
-      setInterval(refresh, 2000);
+      setInterval(refresh, 3000);
     </script>
   </body>
 </html>
