@@ -19,14 +19,17 @@ The current working firmware runs on a M5Stack Atom Echo and publishes acoustic 
 ```text
 ha-acoustic-observatory/
 ├── firmware/                 # M5Stack Atom Echo PlatformIO firmware
-├── home-assistant-app/        # Future Home Assistant add-on / web observatory
+├── ha_acoustic_observatory/   # Future Home Assistant add-on
 ├── docs/                      # Architecture and protocol documentation
 ├── .github/workflows/         # CI entry points
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── LICENSE
+├── repository.yaml
 └── README.md
 ```
+
+The add-on directory is kept at the repository root so the project can later be used as a Home Assistant add-on repository.
 
 ## Architecture
 
@@ -58,7 +61,7 @@ More details are in [docs/firmware.md](docs/firmware.md).
 
 ## Home Assistant Add-on
 
-The `home-assistant-app/` directory is a foundation for the future integrated observatory. The intended first version will subscribe to the firmware spectrum topic, store measurements locally, and expose an Ingress web UI inside Home Assistant.
+The `ha_acoustic_observatory/` directory is a foundation for the future integrated observatory. The intended first version will subscribe to the firmware spectrum topic, store measurements locally, and expose an Ingress web UI inside Home Assistant.
 
 This part is intentionally marked as early-stage until it has been tested on Home Assistant OS.
 
