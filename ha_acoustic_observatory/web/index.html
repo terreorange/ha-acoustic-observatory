@@ -83,6 +83,7 @@
         <div class="tile"><div class="label">Session active</div><div id="active-session" class="value">-</div></div>
         <div class="tile"><div class="label">Score nuisance</div><div id="nuisance-score" class="value">-</div></div>
         <div class="tile"><div class="label">Signature proche</div><div id="best-match" class="value">-</div></div>
+        <div class="tile"><div class="label">Vent automatique</div><div id="wind-state" class="value">-</div></div>
       </section>
 
       <section class="panel">
@@ -144,6 +145,7 @@
         <canvas id="waterfall" aria-label="Historique spectral et pondere"></canvas>
         <div class="legend">
           <span id="history-mode-label">Spectre : temps de haut en bas</span>
+          <span>Bande bleue : vent au-dessus du seuil</span>
           <span id="history-count">0 mesure</span>
         </div>
       </section>
@@ -184,6 +186,7 @@
       const activeSessionEl = document.getElementById("active-session");
       const nuisanceScoreEl = document.getElementById("nuisance-score");
       const bestMatchEl = document.getElementById("best-match");
+      const windStateEl = document.getElementById("wind-state");
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
       const waterfallEl = document.getElementById("waterfall");
@@ -381,7 +384,37 @@
         return { context, width, height, dpr };
       }
 
-      function drawWaterfall(items) {
+      function drawWindOverlay(context, dpr, left, top, plotWidth, plotHeight, items, windPeriods, orientation) {
+        if (!items.length || !windPeriods.length) return;
+        const first = items[0].captured_at;
+        const last = items[items.length - 1].captured_at;
+        const span = Math.max(1, last - first);
+        context.save();
+        context.fillStyle = "rgba(0, 151, 167, 0.18)";
+        context.strokeStyle = "rgba(0, 151, 167, 0.55)";
+        context.lineWidth = dpr;
+        for (const period of windPeriods) {
+          const start = Math.max(first, period.started_at);
+          const end = Math.min(last, period.ended_at || Date.now() / 1000);
+          if (end < first || start > last) continue;
+          if (orientation === "vertical-time") {
+            const y1 = top + ((start - first) / span) * plotHeight;
+            const y2 = top + ((end - first) / span) * plotHeight;
+            const height = Math.max(2 * dpr, y2 - y1);
+            context.fillRect(left, y1, plotWidth, height);
+            context.strokeRect(left, y1, plotWidth, height);
+          } else {
+            const x1 = left + ((start - first) / span) * plotWidth;
+            const x2 = left + ((end - first) / span) * plotWidth;
+            const width = Math.max(2 * dpr, x2 - x1);
+            context.fillRect(x1, top, width, plotHeight);
+            context.strokeRect(x1, top, width, plotHeight);
+          }
+        }
+        context.restore();
+      }
+
+      function drawWaterfall(items, windPeriods = []) {
         const { context, width, height, dpr } = prepareCanvas();
         historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
         historyModeLabelEl.textContent = "Spectre : temps de haut en bas, couleur claire = intensite plus forte";
@@ -404,6 +437,7 @@
             context.fillRect(left + columnIndex * columnWidth, y, Math.ceil(columnWidth), Math.ceil(rowHeight));
           });
         });
+        drawWindOverlay(context, dpr, left, top, plotWidth, plotHeight, items, windPeriods, "vertical-time");
         drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, items);
         context.textAlign = "center";
         for (const frequency of [20, 50, 100, 150, 200, 250]) {
@@ -417,7 +451,7 @@
         return levels[mode];
       }
 
-      function drawWeightedHistory(items) {
+      function drawWeightedHistory(items, windPeriods = []) {
         const { context, width, height, dpr } = prepareCanvas();
         const mode = historyModeEl.value;
         const labels = { a: "dB(A)", c: "dB(C)", ca: "Ecart C-A" };
@@ -445,6 +479,7 @@
           context.lineTo(left + plotWidth, yy);
           context.stroke();
         }
+        drawWindOverlay(context, dpr, left, top, plotWidth, plotHeight, values, windPeriods, "horizontal-time");
         context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
         context.lineWidth = 2 * dpr;
         context.beginPath();
@@ -478,9 +513,9 @@
         context.fillText(formatTime(items[items.length - 1].captured_at), left - 8 * dpr, top + plotHeight);
       }
 
-      function drawHistory(items) {
-        if (historyModeEl.value === "spectrum") drawWaterfall(items);
-        else drawWeightedHistory(items);
+      function drawHistory(items, windPeriods = []) {
+        if (historyModeEl.value === "spectrum") drawWaterfall(items, windPeriods);
+        else drawWeightedHistory(items, windPeriods);
       }
 
       function updateSignature(state) {
@@ -499,6 +534,24 @@
         activeSessionEl.textContent = session ? session.label : "-";
         startSessionEl.disabled = Boolean(session);
         stopSessionEl.disabled = !session;
+      }
+
+      function updateWindState(state) {
+        const wind = state.weather || {};
+        if (!wind.configured) {
+          windStateEl.textContent = "Non configure";
+          windStateEl.title = "Renseignez wind_speed_entity dans la configuration de l'add-on.";
+          return;
+        }
+        if (wind.error) {
+          windStateEl.textContent = "Erreur";
+          windStateEl.title = wind.error;
+          return;
+        }
+        const speed = wind.speed_kmh === null || wind.speed_kmh === undefined ? "-" : `${wind.speed_kmh.toFixed(1)} km/h`;
+        const gust = wind.gust_kmh === null || wind.gust_kmh === undefined ? null : `rafales ${wind.gust_kmh.toFixed(1)} km/h`;
+        windStateEl.textContent = `${wind.windy ? "Vent marque" : "Vent faible"} - ${speed}${gust ? `, ${gust}` : ""}`;
+        windStateEl.title = `Seuil vent : ${wind.speed_threshold_kmh} km/h. Seuil rafales : ${wind.gust_threshold_kmh} km/h.`;
       }
 
       function updateNotice(state) {
@@ -557,6 +610,7 @@
         setStatus(state);
         updateNotice(state);
         updateSessionState(state);
+        updateWindState(state);
         updateSignature(state);
         updateWeightedReadings(points);
         topicEl.textContent = state.topic || "-";
@@ -569,7 +623,7 @@
       async function refreshHistory() {
         const response = await fetch(`api/history?minutes=${historyWindowEl.value}`);
         const history = await response.json();
-        drawHistory(history.items || []);
+        drawHistory(history.items || [], history.wind_periods || []);
       }
 
       async function refreshSessions() {
