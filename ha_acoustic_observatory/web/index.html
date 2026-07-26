@@ -11,6 +11,7 @@
         --border: color-mix(in srgb, CanvasText 14%, transparent);
         --muted: color-mix(in srgb, CanvasText 62%, transparent);
         --accent: #0097a7;
+        --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
         --ok: #1f9d55;
         --warn: #c77700;
         --bad: #c62828;
@@ -32,11 +33,15 @@
         padding: 24px;
       }
 
-      header {
+      header,
+      .panel-title-row {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         gap: 16px;
+      }
+
+      header {
         border-bottom: 1px solid var(--border);
         padding-bottom: 16px;
       }
@@ -112,10 +117,29 @@
         color: var(--bad);
       }
 
+      select {
+        background: Canvas;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: CanvasText;
+        font: inherit;
+        min-height: 34px;
+        padding: 4px 28px 4px 10px;
+      }
+
       svg {
         display: block;
         height: 320px;
         overflow: visible;
+        width: 100%;
+      }
+
+      canvas {
+        background: color-mix(in srgb, CanvasText 3%, Canvas);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: block;
+        height: 300px;
         width: 100%;
       }
 
@@ -131,7 +155,7 @@
       }
 
       .spectrum-area {
-        fill: color-mix(in srgb, var(--accent) 22%, transparent);
+        fill: var(--accent-soft);
       }
 
       .spectrum-line {
@@ -161,12 +185,14 @@
           padding: 16px;
         }
 
-        header {
+        header,
+        .panel-title-row {
           align-items: flex-start;
           flex-direction: column;
         }
 
-        svg {
+        svg,
+        canvas {
           height: 260px;
         }
       }
@@ -178,7 +204,7 @@
         <h1>Acoustic Observatory</h1>
         <div id="status" class="status">
           <span id="status-dot" class="dot warn"></span>
-          <span id="status-text">Démarrage...</span>
+          <span id="status-text">Demarrage...</span>
         </div>
       </header>
 
@@ -188,29 +214,50 @@
           <div id="topic" class="value">-</div>
         </div>
         <div class="tile">
-          <div class="label">Messages reçus</div>
+          <div class="label">Messages recus</div>
           <div id="messages" class="value">0</div>
         </div>
         <div class="tile">
-          <div class="label">Dernière mesure</div>
+          <div class="label">Derniere mesure</div>
           <div id="last-update" class="value">-</div>
         </div>
         <div class="tile">
-          <div class="label">Fréquence dominante</div>
+          <div class="label">Frequence dominante</div>
           <div id="dominant-frequency" class="value">-</div>
         </div>
       </section>
 
       <section class="panel">
         <h2>Spectre 20-250 Hz</h2>
-        <svg id="chart" role="img" aria-label="Spectre des basses fréquences"></svg>
+        <svg id="chart" role="img" aria-label="Spectre des basses frequences"></svg>
         <div class="legend">
-          <span>Ligne bleue : intensité relative par fréquence</span>
-          <span>Ligne orange : fréquence dominante</span>
+          <span>Ligne bleue : intensite relative par frequence</span>
+          <span>Ligne orange : frequence dominante</span>
         </div>
       </section>
 
-      <div id="notice" class="notice">En attente des premières données du capteur.</div>
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Waterfall historique</h2>
+          <label class="label">
+            Fenetre
+            <select id="history-window">
+              <option value="5">5 min</option>
+              <option value="10" selected>10 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 h</option>
+            </select>
+          </label>
+        </div>
+        <canvas id="waterfall" aria-label="Historique spectral"></canvas>
+        <div class="legend">
+          <span>Temps : de haut en bas</span>
+          <span>Couleur claire : intensite plus forte</span>
+          <span id="history-count">0 mesure</span>
+        </div>
+      </section>
+
+      <div id="notice" class="notice">En attente des premieres donnees du capteur.</div>
     </main>
 
     <script>
@@ -222,6 +269,9 @@
       const dominantFrequencyEl = document.getElementById("dominant-frequency");
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
+      const waterfallEl = document.getElementById("waterfall");
+      const historyWindowEl = document.getElementById("history-window");
+      const historyCountEl = document.getElementById("history-count");
 
       function formatTime(timestamp) {
         if (!timestamp) return "-";
@@ -229,8 +279,8 @@
       }
 
       function formatAge(seconds) {
-        if (seconds === null || seconds === undefined) return "aucune donnée";
-        if (seconds < 2) return "à l'instant";
+        if (seconds === null || seconds === undefined) return "aucune donnee";
+        if (seconds < 2) return "a l'instant";
         if (seconds < 60) return `${seconds} s`;
         return `${Math.round(seconds / 60)} min`;
       }
@@ -240,18 +290,18 @@
 
         if (!state.connected) {
           statusDotEl.classList.add("bad");
-          statusTextEl.textContent = "MQTT déconnecté";
+          statusTextEl.textContent = "MQTT deconnecte";
           return;
         }
 
         if (state.stale) {
           statusDotEl.classList.add("warn");
-          statusTextEl.textContent = "MQTT connecté, aucune donnée récente";
+          statusTextEl.textContent = "MQTT connecte, aucune donnee recente";
           return;
         }
 
         statusDotEl.classList.add("ok");
-        statusTextEl.textContent = "MQTT connecté";
+        statusTextEl.textContent = "MQTT connecte";
       }
 
       function svgEl(name, attributes = {}) {
@@ -360,6 +410,92 @@
         }
       }
 
+      function colorForRatio(ratio) {
+        const clamped = Math.max(0, Math.min(1, ratio));
+        const hue = 190 - clamped * 155;
+        const lightness = 18 + clamped * 48;
+        return `hsl(${hue}, 78%, ${lightness}%)`;
+      }
+
+      function drawWaterfall(items) {
+        const rect = waterfallEl.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(1, Math.round(rect.width * dpr));
+        const height = Math.max(1, Math.round(rect.height * dpr));
+        const context = waterfallEl.getContext("2d");
+
+        waterfallEl.width = width;
+        waterfallEl.height = height;
+        context.clearRect(0, 0, width, height);
+        context.fillStyle = getComputedStyle(document.body).backgroundColor;
+        context.fillRect(0, 0, width, height);
+
+        historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
+
+        if (!items.length) {
+          context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+          context.font = `${13 * dpr}px system-ui, sans-serif`;
+          context.fillText("En attente d'historique", 16 * dpr, 32 * dpr);
+          return;
+        }
+
+        const frequencies = [...new Set(items.flatMap((item) =>
+          item.points.map((point) => point.frequency)
+        ))].sort((a, b) => a - b);
+
+        const maxMagnitude = Math.max(
+          1,
+          ...items.flatMap((item) => item.points.map((point) => point.magnitude))
+        );
+
+        const left = 50 * dpr;
+        const right = 12 * dpr;
+        const top = 10 * dpr;
+        const bottom = 26 * dpr;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const rowHeight = Math.max(1, plotHeight / items.length);
+        const columnWidth = Math.max(1, plotWidth / Math.max(1, frequencies.length));
+
+        items.forEach((item, rowIndex) => {
+          const byFrequency = new Map(item.points.map((point) => [point.frequency, point.magnitude]));
+          const y = top + rowIndex * rowHeight;
+
+          frequencies.forEach((frequency, columnIndex) => {
+            const value = byFrequency.get(frequency) || 0;
+            context.fillStyle = colorForRatio(value / maxMagnitude);
+            context.fillRect(
+              left + columnIndex * columnWidth,
+              y,
+              Math.ceil(columnWidth),
+              Math.ceil(rowHeight)
+            );
+          });
+        });
+
+        context.strokeStyle = colorMixCanvas("CanvasText", 0.18);
+        context.lineWidth = dpr;
+        context.strokeRect(left, top, plotWidth, plotHeight);
+
+        context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+        context.font = `${11 * dpr}px system-ui, sans-serif`;
+        context.textAlign = "center";
+
+        for (const frequency of [20, 50, 100, 150, 200, 250]) {
+          const x = left + ((frequency - 20) / (250 - 20)) * plotWidth;
+          context.fillText(`${frequency} Hz`, x, height - 8 * dpr);
+        }
+
+        context.textAlign = "left";
+        context.fillText(formatTime(items[0].captured_at), 4 * dpr, top + 12 * dpr);
+        context.fillText(formatTime(items[items.length - 1].captured_at), 4 * dpr, top + plotHeight);
+      }
+
+      function colorMixCanvas(token, alpha) {
+        const color = getComputedStyle(document.body).color;
+        return color.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+      }
+
       function updateNotice(state) {
         noticeEl.className = "notice";
 
@@ -375,45 +511,59 @@
         }
 
         if (state.message_count === 0) {
-          noticeEl.textContent = "MQTT est connecté. En attente du premier spectre publié par l'Atom Echo.";
+          noticeEl.textContent = "MQTT est connecte. En attente du premier spectre publie par l'Atom Echo.";
           return;
         }
 
         if (state.stale) {
-          noticeEl.textContent = `Dernier spectre reçu il y a ${formatAge(state.age_seconds)}.`;
+          noticeEl.textContent = `Dernier spectre recu il y a ${formatAge(state.age_seconds)}.`;
           return;
         }
 
-        noticeEl.textContent = "Spectre reçu en temps réel.";
+        noticeEl.textContent = "Spectre recu en temps reel. L'historique se construit automatiquement.";
+      }
+
+      async function refreshState() {
+        const response = await fetch("api/state");
+        const state = await response.json();
+        const spectrum = state.spectrum || {};
+        const points = spectrum.points || [];
+
+        setStatus(state);
+        updateNotice(state);
+
+        topicEl.textContent = state.topic || "-";
+        messagesEl.textContent = state.message_count || 0;
+        lastUpdateEl.textContent = state.last_message_at
+          ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})`
+          : "-";
+        dominantFrequencyEl.textContent = spectrum.dominant_frequency
+          ? `${spectrum.dominant_frequency.toFixed(1)} Hz`
+          : "-";
+
+        drawChart(points, spectrum.dominant_frequency);
+      }
+
+      async function refreshHistory() {
+        const minutes = historyWindowEl.value;
+        const response = await fetch(`api/history?minutes=${minutes}`);
+        const history = await response.json();
+        drawWaterfall(history.items || []);
       }
 
       async function refresh() {
         try {
-          const response = await fetch("api/state");
-          const state = await response.json();
-          const spectrum = state.spectrum || {};
-          const points = spectrum.points || [];
-
-          setStatus(state);
-          updateNotice(state);
-
-          topicEl.textContent = state.topic || "-";
-          messagesEl.textContent = state.message_count || 0;
-          lastUpdateEl.textContent = state.last_message_at
-            ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})`
-            : "-";
-          dominantFrequencyEl.textContent = spectrum.dominant_frequency
-            ? `${spectrum.dominant_frequency.toFixed(1)} Hz`
-            : "-";
-
-          drawChart(points, spectrum.dominant_frequency);
+          await Promise.all([refreshState(), refreshHistory()]);
         } catch (error) {
           statusDotEl.className = "dot bad";
-          statusTextEl.textContent = "Interface déconnectée";
+          statusTextEl.textContent = "Interface deconnectee";
           noticeEl.className = "notice error";
           noticeEl.textContent = String(error);
         }
       }
+
+      historyWindowEl.addEventListener("change", refreshHistory);
+      window.addEventListener("resize", refreshHistory);
 
       refresh();
       setInterval(refresh, 2000);
