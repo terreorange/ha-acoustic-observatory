@@ -26,4 +26,4 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
-home-assistant-app/data/
+ha_acoustic_observatory/data/
