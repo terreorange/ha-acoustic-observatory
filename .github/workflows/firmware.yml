@@ -28,6 +28,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Prepare firmware secrets
+        working-directory: firmware
+        run: cp include/secrets.example.h include/secrets.h
+
       - name: Build firmware
         working-directory: firmware
         run: pio run
