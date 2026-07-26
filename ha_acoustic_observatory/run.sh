@@ -1,4 +1,4 @@
-#!/usr/bin/with-contenv sh
+#!/bin/sh
 set -eu
 
-python /app/app.py
+exec python /app/app.py
