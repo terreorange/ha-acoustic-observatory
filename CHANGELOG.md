@@ -18,6 +18,18 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.6.0] - 2026-07-26
+
+### Added
+
+- Selectable history view for estimated weighted readings.
+- Time-series history for estimated dB(A), dB(B), dB(C), and C-A gap.
+- Spectrum history remains available as the default waterfall view.
+
+### Notes
+
+- Historical weighted readings are still relative, uncalibrated estimates intended for trend comparison.
+
 ## [0.5.0] - 2026-07-26
 
 ### Added
