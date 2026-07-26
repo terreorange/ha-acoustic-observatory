@@ -18,6 +18,20 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.8.0] - 2026-07-26
+
+### Added
+
+- Optional Home Assistant wind-speed and wind-gust entity configuration.
+- Automatic wind detection based on configurable km/h thresholds.
+- Wind status card in the add-on UI.
+- Wind overlays in spectrum and weighted-history charts.
+- Persistent weather sampling in SQLite for recent history overlays.
+
+### Notes
+
+- This first automatic wind version uses existing Home Assistant entities. Configure `wind_speed_entity` and optionally `wind_gust_entity` in the add-on options.
+
 ## [0.7.2] - 2026-07-26
 
 ### Changed
