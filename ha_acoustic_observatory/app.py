@@ -12,6 +12,7 @@ WEB_DIR = APP_DIR / "web"
 OPTIONS_PATH = Path("/data/options.json")
 
 DEFAULT_TOPIC = "atom_echo_noise/spectrum/state"
+STALE_AFTER_SECONDS = 30
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 
@@ -66,6 +67,59 @@ def is_success_reason(reason_code):
         return str(reason_code).lower() == "success"
 
 
+def parse_spectrum(payload):
+    bins = payload.get("bins", {})
+    points = []
+
+    for frequency, magnitude in bins.items():
+        try:
+            points.append(
+                {
+                    "frequency": float(frequency),
+                    "magnitude": float(magnitude),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+
+    points.sort(key=lambda point: point["frequency"])
+    return points
+
+
+def summarize_spectrum(payload):
+    points = parse_spectrum(payload or {})
+
+    if not points:
+        return {
+            "points": [],
+            "dominant_frequency": None,
+            "dominant_magnitude": None,
+            "max_magnitude": 0.0,
+            "low_band_magnitude": 0.0,
+        }
+
+    dominant = max(points, key=lambda point: point["magnitude"])
+    low_points = [
+        point for point in points
+        if 40.0 <= point["frequency"] <= 250.0
+    ]
+
+    if low_points:
+        low_band_magnitude = sum(
+            point["magnitude"] for point in low_points
+        ) / len(low_points)
+    else:
+        low_band_magnitude = 0.0
+
+    return {
+        "points": points,
+        "dominant_frequency": dominant["frequency"],
+        "dominant_magnitude": dominant["magnitude"],
+        "max_magnitude": dominant["magnitude"],
+        "low_band_magnitude": low_band_magnitude,
+    }
+
+
 def on_connect(client, userdata, flags, reason_code, properties=None):
     if is_success_reason(reason_code):
         state["connected"] = True
@@ -76,8 +130,12 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
         state["error"] = f"MQTT connect failed: {reason_code}"
 
 
-def on_disconnect(client, userdata, reason_code, properties=None):
+def on_disconnect(client, userdata, *args):
     state["connected"] = False
+
+    reason = args[-2] if len(args) >= 2 else args[-1] if args else None
+    if reason and not is_success_reason(reason):
+        state["error"] = f"MQTT disconnected: {reason}"
 
 
 def on_message(client, userdata, message):
@@ -124,7 +182,27 @@ def index():
 
 @app.get("/api/state")
 def api_state():
-    return jsonify(state)
+    now = time.time()
+    last_message_at = state["last_message_at"]
+    age_seconds = None
+
+    if last_message_at:
+        age_seconds = max(0, int(now - last_message_at))
+
+    summary = summarize_spectrum(state["last_spectrum"])
+
+    return jsonify(
+        {
+            "connected": state["connected"],
+            "topic": state["topic"],
+            "last_message_at": last_message_at,
+            "message_count": state["message_count"],
+            "error": state["error"],
+            "age_seconds": age_seconds,
+            "stale": age_seconds is None or age_seconds > STALE_AFTER_SECONDS,
+            "spectrum": summary,
+        }
+    )
 
 
 if __name__ == "__main__":
