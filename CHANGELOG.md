@@ -18,6 +18,20 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.9.0] - 2026-07-26
+
+### Added
+
+- Configurable retention for stored spectrum samples.
+- Configurable retention for stored weather and wind samples.
+- Automatic SQLite cleanup worker to prevent long-running add-on storage growth.
+- Storage cleanup status in the add-on API.
+
+### Notes
+
+- Default retention keeps 14 days of spectrum samples and 30 days of weather samples.
+- The database cleanup runs every 6 hours by default and compacts the SQLite file after deleting old rows.
+
 ## [0.8.0] - 2026-07-26
 
 ### Added
@@ -63,7 +77,7 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 ### Added
 
 - Selectable history view for estimated weighted readings.
-- Time-series history for estimated dB(A), dB(B), dB(C), and C-A gap.
+- Time-series history for estimated dB(A), estimated dB(C), and C-A gap.
 - Spectrum history remains available as the default waterfall view.
 
 ### Notes
@@ -74,7 +88,7 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 
 ### Added
 
-- Estimated A, B, and C weighted level cards in the Home Assistant add-on UI.
+- Estimated A and C weighted level cards in the Home Assistant add-on UI.
 - Estimated `C-A` gap card to highlight low-frequency dominance.
 - Plain-language bass reading based on the estimated `C-A` gap.
 

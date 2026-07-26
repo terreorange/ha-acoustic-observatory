@@ -31,6 +31,9 @@ NUISANCE_KEYWORDS = ("nuisance", "entrepot", "entrepôt", "ronron", "groupe", "f
 DEFAULT_WIND_SPEED_THRESHOLD_KMH = 15.0
 DEFAULT_WIND_GUST_THRESHOLD_KMH = 30.0
 DEFAULT_WEATHER_POLL_INTERVAL_SECONDS = 30
+DEFAULT_SPECTRUM_RETENTION_DAYS = 14
+DEFAULT_WEATHER_RETENTION_DAYS = 30
+DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS = 6
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 state_lock = threading.Lock()
@@ -53,6 +56,15 @@ state = {
         "last_update_at": None,
         "error": None,
     },
+    "storage": {
+        "last_cleanup_at": None,
+        "next_cleanup_at": None,
+        "spectrum_retention_days": DEFAULT_SPECTRUM_RETENTION_DAYS,
+        "weather_retention_days": DEFAULT_WEATHER_RETENTION_DAYS,
+        "deleted_spectra": 0,
+        "deleted_weather_samples": 0,
+        "error": None,
+    },
 }
 
 
@@ -64,6 +76,9 @@ def default_options():
         "wind_speed_threshold_kmh": DEFAULT_WIND_SPEED_THRESHOLD_KMH,
         "wind_gust_threshold_kmh": DEFAULT_WIND_GUST_THRESHOLD_KMH,
         "weather_poll_interval_seconds": DEFAULT_WEATHER_POLL_INTERVAL_SECONDS,
+        "spectrum_retention_days": DEFAULT_SPECTRUM_RETENTION_DAYS,
+        "weather_retention_days": DEFAULT_WEATHER_RETENTION_DAYS,
+        "database_cleanup_interval_hours": DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS,
     }
 
 
@@ -101,6 +116,22 @@ def as_float(value):
         return float(str(value).replace(",", "."))
     except (TypeError, ValueError):
         return None
+
+
+def as_int(value):
+    try:
+        return int(float(str(value).replace(",", ".")))
+    except (TypeError, ValueError):
+        return None
+
+
+def bounded_int(value, default, minimum, maximum):
+    numeric = as_int(value)
+
+    if numeric is None:
+        numeric = default
+
+    return max(minimum, min(maximum, numeric))
 
 
 def speed_to_kmh(value, unit):
@@ -419,6 +450,69 @@ def save_weather_sample(captured_at, sample):
                     json.dumps(sample, separators=(",", ":")),
                 ),
             )
+
+
+def cleanup_database():
+    options = current_options()
+    now = time.time()
+
+    spectrum_retention_days = bounded_int(
+        options.get("spectrum_retention_days"),
+        DEFAULT_SPECTRUM_RETENTION_DAYS,
+        1,
+        365,
+    )
+    weather_retention_days = bounded_int(
+        options.get("weather_retention_days"),
+        DEFAULT_WEATHER_RETENTION_DAYS,
+        1,
+        365,
+    )
+
+    spectrum_cutoff = now - spectrum_retention_days * 24 * 60 * 60
+    weather_cutoff = now - weather_retention_days * 24 * 60 * 60
+    deleted_spectra = 0
+    deleted_weather_samples = 0
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            cursor = connection.execute(
+                "DELETE FROM spectra WHERE captured_at < ?",
+                (spectrum_cutoff,),
+            )
+            deleted_spectra = cursor.rowcount
+
+            cursor = connection.execute(
+                "DELETE FROM weather_samples WHERE captured_at < ?",
+                (weather_cutoff,),
+            )
+            deleted_weather_samples = cursor.rowcount
+
+        if deleted_spectra > 0 or deleted_weather_samples > 0:
+            with sqlite3.connect(DATABASE_PATH) as connection:
+                connection.execute("VACUUM")
+
+    interval_hours = bounded_int(
+        options.get("database_cleanup_interval_hours"),
+        DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS,
+        1,
+        168,
+    )
+
+    cleanup_state = {
+        "last_cleanup_at": now,
+        "next_cleanup_at": now + interval_hours * 60 * 60,
+        "spectrum_retention_days": spectrum_retention_days,
+        "weather_retention_days": weather_retention_days,
+        "deleted_spectra": max(0, deleted_spectra),
+        "deleted_weather_samples": max(0, deleted_weather_samples),
+        "error": None,
+    }
+
+    with state_lock:
+        state["storage"] = cleanup_state
+
+    return cleanup_state
 
 
 def spectrum_vector(points):
@@ -894,6 +988,31 @@ def weather_worker():
         time.sleep(interval)
 
 
+def cleanup_worker():
+    while True:
+        options = current_options()
+        interval_hours = bounded_int(
+            options.get("database_cleanup_interval_hours"),
+            DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS,
+            1,
+            168,
+        )
+
+        try:
+            cleanup_database()
+        except Exception as exc:  # pragma: no cover - runtime diagnostics
+            now = time.time()
+            with state_lock:
+                state["storage"] = {
+                    **state.get("storage", {}),
+                    "last_cleanup_at": now,
+                    "next_cleanup_at": now + interval_hours * 60 * 60,
+                    "error": f"Could not clean database: {exc}",
+                }
+
+        time.sleep(interval_hours * 60 * 60)
+
+
 @app.get("/")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
@@ -926,6 +1045,7 @@ def api_state():
             "stale": age_seconds is None or age_seconds > STALE_AFTER_SECONDS,
             "mqtt_source": snapshot["mqtt_source"],
             "weather": snapshot["weather"],
+            "storage": snapshot["storage"],
             "active_session": active_session(),
             "signature": signature,
             "spectrum": summary,
@@ -1063,4 +1183,5 @@ if __name__ == "__main__":
     init_database()
     threading.Thread(target=mqtt_worker, daemon=True).start()
     threading.Thread(target=weather_worker, daemon=True).start()
+    threading.Thread(target=cleanup_worker, daemon=True).start()
     app.run(host="0.0.0.0", port=8099)
