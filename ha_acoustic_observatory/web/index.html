@@ -77,7 +77,6 @@
         <div class="tile"><div class="label">Derniere mesure</div><div id="last-update" class="value">-</div></div>
         <div class="tile"><div class="label">Frequence dominante</div><div id="dominant-frequency" class="value">-</div></div>
         <div class="tile"><div class="label">dB(A) estime calibre</div><div id="weighted-a" class="value">-</div></div>
-        <div class="tile"><div class="label">dB(B) estime calibre</div><div id="weighted-b" class="value">-</div></div>
         <div class="tile"><div class="label">dB(C) estime calibre</div><div id="weighted-c" class="value">-</div></div>
         <div class="tile"><div class="label">Ecart C-A</div><div id="weighted-ca" class="value">-</div></div>
         <div class="tile"><div class="label">Lecture grave</div><div id="bass-reading" class="value">-</div></div>
@@ -105,7 +104,7 @@
           <button id="calibration-apply">Appliquer correction</button>
         </div>
         <div class="legend">
-          <span>La correction est ajoutee aux dB(A/B/C) et conservee dans ce navigateur.</span>
+          <span>La correction est ajoutee aux dB(A) et dB(C), puis conservee dans ce navigateur.</span>
           <span>L'ecart C-A ne change pas, car la meme correction s'applique aux deux courbes.</span>
         </div>
       </section>
@@ -116,7 +115,7 @@
         <div class="legend">
           <span>Ligne bleue : intensite relative par frequence</span>
           <span>Ligne orange : frequence dominante</span>
-          <span>dB(A/B/C) : estimation relative calibree par decalage</span>
+          <span>dB(A/C) : estimation relative calibree par decalage</span>
         </div>
       </section>
 
@@ -128,7 +127,6 @@
               <select id="history-mode">
                 <option value="spectrum" selected>Spectre</option>
                 <option value="a">dB(A)</option>
-                <option value="b">dB(B)</option>
                 <option value="c">dB(C)</option>
                 <option value="ca">Ecart C-A</option>
               </select>
@@ -174,7 +172,6 @@
       const lastUpdateEl = document.getElementById("last-update");
       const dominantFrequencyEl = document.getElementById("dominant-frequency");
       const weightedAEl = document.getElementById("weighted-a");
-      const weightedBEl = document.getElementById("weighted-b");
       const weightedCEl = document.getElementById("weighted-c");
       const weightedCaEl = document.getElementById("weighted-ca");
       const bassReadingEl = document.getElementById("bass-reading");
@@ -291,11 +288,6 @@
           const denominator = (f2 + c20) * Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + c12200);
           return 20 * Math.log10(numerator / denominator) + 2.0;
         }
-        if (curve === "B") {
-          const numerator = c12200 * frequency * f2;
-          const denominator = (f2 + c20) * Math.sqrt(f2 + 158.5 * 158.5) * (f2 + c12200);
-          return 20 * Math.log10(numerator / denominator) + 0.17;
-        }
         const numerator = c12200 * f2;
         const denominator = (f2 + c20) * (f2 + c12200);
         return 20 * Math.log10(numerator / denominator) + 0.06;
@@ -315,11 +307,9 @@
 
       function weightedMetrics(points) {
         const levelA = weightedLevel(points, "A");
-        const levelB = weightedLevel(points, "B");
         const levelC = weightedLevel(points, "C");
         return {
           a: levelA,
-          b: levelB,
           c: levelC,
           ca: levelA === null || levelC === null ? null : levelC - levelA,
         };
@@ -329,7 +319,6 @@
         const levels = weightedMetrics(points);
         return {
           a: levels.a === null ? null : levels.a + dbCalibrationOffset,
-          b: levels.b === null ? null : levels.b + dbCalibrationOffset,
           c: levels.c === null ? null : levels.c + dbCalibrationOffset,
           ca: levels.ca,
           raw: levels,
@@ -358,7 +347,6 @@
         lastRawWeightedLevels = levels.raw;
         updateCalibrationControls();
         weightedAEl.textContent = levels.a === null ? "-" : `${levels.a.toFixed(1)} dB(A)`;
-        weightedBEl.textContent = levels.b === null ? "-" : `${levels.b.toFixed(1)} dB(B)`;
         weightedCEl.textContent = levels.c === null ? "-" : `${levels.c.toFixed(1)} dB(C)`;
         if (levels.ca === null) {
           weightedCaEl.textContent = "-";
@@ -432,7 +420,7 @@
       function drawWeightedHistory(items) {
         const { context, width, height, dpr } = prepareCanvas();
         const mode = historyModeEl.value;
-        const labels = { a: "dB(A)", b: "dB(B)", c: "dB(C)", ca: "Ecart C-A" };
+        const labels = { a: "dB(A)", c: "dB(C)", ca: "Ecart C-A" };
         const values = items.map((item) => ({ captured_at: item.captured_at, value: historyValue(item, mode) })).filter((item) => item.value !== null && Number.isFinite(item.value));
         historyCountEl.textContent = `${values.length} valeur${values.length > 1 ? "s" : ""}`;
         historyModeLabelEl.textContent = mode === "ca" ? `${labels[mode]} : ecart relatif dans le temps` : `${labels[mode]} : estimation calibree dans le temps`;
@@ -519,7 +507,7 @@
         if (!state.connected) { noticeEl.textContent = "Connexion au broker MQTT en cours."; return; }
         if (state.message_count === 0) { noticeEl.textContent = "MQTT est connecte. En attente du premier spectre publie par l'Atom Echo."; return; }
         if (state.stale) { noticeEl.textContent = `Dernier spectre recu il y a ${formatAge(state.age_seconds)}.`; return; }
-        noticeEl.textContent = "Spectre recu en temps reel. Les lectures dB(A/B/C) sont des estimations calibrees par decalage.";
+        noticeEl.textContent = "Spectre recu en temps reel. Les lectures dB(A/C) sont des estimations calibrees par decalage.";
       }
 
       function renderSessions(sessions) {
