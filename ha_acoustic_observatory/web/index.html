@@ -101,8 +101,8 @@
           <label class="field label">dB(C) actuel non calibre
             <input id="calibration-current" readonly value="-" />
           </label>
-          <button id="calibration-apply" class="primary">Appliquer</button>
-          <button id="calibration-match">Caler</button>
+          <button id="calibration-match" class="primary">Caler</button>
+          <button id="calibration-apply">Appliquer correction</button>
         </div>
         <div class="legend">
           <span>La correction est ajoutee aux dB(A/B/C) et conservee dans ce navigateur.</span>
@@ -400,7 +400,7 @@
         if (!items.length) return drawEmptyHistory(context, dpr);
         const frequencies = [...new Set(items.flatMap((item) => item.points.map((point) => point.frequency)))].sort((a, b) => a - b);
         const maxMagnitude = Math.max(1, ...items.flatMap((item) => item.points.map((point) => point.magnitude)));
-        const left = 50 * dpr;
+        const left = 64 * dpr;
         const right = 12 * dpr;
         const top = 10 * dpr;
         const bottom = 26 * dpr;
@@ -437,7 +437,7 @@
         historyCountEl.textContent = `${values.length} valeur${values.length > 1 ? "s" : ""}`;
         historyModeLabelEl.textContent = mode === "ca" ? `${labels[mode]} : ecart relatif dans le temps` : `${labels[mode]} : estimation calibree dans le temps`;
         if (!values.length) return drawEmptyHistory(context, dpr);
-        const left = 54 * dpr;
+        const left = 64 * dpr;
         const right = 16 * dpr;
         const top = 14 * dpr;
         const bottom = 28 * dpr;
@@ -485,9 +485,9 @@
         context.strokeRect(left, top, plotWidth, plotHeight);
         context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
         context.font = `${11 * dpr}px system-ui, sans-serif`;
-        context.textAlign = "left";
-        context.fillText(formatTime(items[0].captured_at), 4 * dpr, top + 12 * dpr);
-        context.fillText(formatTime(items[items.length - 1].captured_at), 4 * dpr, top + plotHeight);
+        context.textAlign = "right";
+        context.fillText(formatTime(items[0].captured_at), left - 8 * dpr, top + 12 * dpr);
+        context.fillText(formatTime(items[items.length - 1].captured_at), left - 8 * dpr, top + plotHeight);
       }
 
       function drawHistory(items) {
@@ -622,13 +622,21 @@
         await refresh();
       }
 
+      function applyCalibrationFromReference() {
+        const reference = Number(calibrationReferenceEl.value);
+        if (!Number.isFinite(reference) || lastRawWeightedLevels?.c === null || lastRawWeightedLevels?.c === undefined) return false;
+        setCalibrationOffset(reference - lastRawWeightedLevels.c);
+        return true;
+      }
+
       startSessionEl.addEventListener("click", () => startSession().catch((error) => alert(error.message)));
       stopSessionEl.addEventListener("click", () => stopSession().catch((error) => alert(error.message)));
-      calibrationApplyEl.addEventListener("click", () => setCalibrationOffset(calibrationOffsetEl.value));
-      calibrationMatchEl.addEventListener("click", () => {
-        const reference = Number(calibrationReferenceEl.value);
-        if (!Number.isFinite(reference) || lastRawWeightedLevels?.c === null || lastRawWeightedLevels?.c === undefined) return;
-        setCalibrationOffset(reference - lastRawWeightedLevels.c);
+      calibrationApplyEl.addEventListener("click", () => {
+        if (!applyCalibrationFromReference()) setCalibrationOffset(calibrationOffsetEl.value);
+      });
+      calibrationMatchEl.addEventListener("click", applyCalibrationFromReference);
+      calibrationReferenceEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") applyCalibrationFromReference();
       });
       calibrationOffsetEl.addEventListener("keydown", (event) => {
         if (event.key === "Enter") setCalibrationOffset(calibrationOffsetEl.value);
