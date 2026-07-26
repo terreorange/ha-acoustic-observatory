@@ -18,6 +18,19 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.2.0] - 2026-07-26
+
+### Added
+
+- Real-time spectrum UI for the Home Assistant add-on.
+- Responsive SVG chart for the 20-250 Hz spectrum.
+- Dominant frequency, message count, last update, and MQTT status cards.
+- Clear empty-state and stale-data messages when no spectrum has been received.
+
+### Fixed
+
+- MQTT disconnect callback compatibility with Paho MQTT v2.
+
 ## [0.1.0] - 2026-07-26
 
 ### Added
