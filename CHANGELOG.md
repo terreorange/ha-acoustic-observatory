@@ -18,6 +18,13 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.7.2] - 2026-07-26
+
+### Changed
+
+- Removed the obsolete B-weighting estimate from the Home Assistant add-on UI.
+- Kept the display focused on estimated dB(A), estimated dB(C), and the C-A gap.
+
 ## [0.7.1] - 2026-07-26
 
 ### Fixed
