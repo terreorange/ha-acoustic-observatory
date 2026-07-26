@@ -1,7 +1,7 @@
 name: Acoustic Observatory
 slug: ha_acoustic_observatory
 description: Acoustic spectrum observatory for Home Assistant
-version: 0.7.2
+version: 0.8.0
 url: https://github.com/terreorange/ha-acoustic-observatory
 arch:
   - aarch64
@@ -24,5 +24,15 @@ map:
   - addon_config:rw
 options:
   mqtt_topic: atom_echo_noise/spectrum/state
+  wind_speed_entity: ""
+  wind_gust_entity: ""
+  wind_speed_threshold_kmh: 15
+  wind_gust_threshold_kmh: 30
+  weather_poll_interval_seconds: 30
 schema:
   mqtt_topic: str
+  wind_speed_entity: str?
+  wind_gust_entity: str?
+  wind_speed_threshold_kmh: float
+  wind_gust_threshold_kmh: float
+  weather_poll_interval_seconds: int(10,300)
