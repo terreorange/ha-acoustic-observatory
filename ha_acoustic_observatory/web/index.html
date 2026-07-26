@@ -16,213 +16,49 @@
         --warn: #c77700;
         --bad: #c62828;
       }
-
       * { box-sizing: border-box; }
-
-      body {
-        margin: 0;
-        background: Canvas;
-        color: CanvasText;
-      }
-
-      main {
-        max-width: 1120px;
-        margin: 0 auto;
-        padding: 24px;
-      }
-
-      header,
-      .panel-title-row,
-      .session-actions {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 16px;
-      }
-
-      header {
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 16px;
-      }
-
+      body { margin: 0; background: Canvas; color: CanvasText; }
+      main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+      header, .panel-title-row, .session-actions, .history-controls { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+      header { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
       h1 { font-size: 1.55rem; margin: 0; }
       h2 { font-size: 1rem; margin: 0 0 12px; }
-
-      .status {
-        align-items: center;
-        display: inline-flex;
-        gap: 8px;
-        font-size: 0.95rem;
-        white-space: nowrap;
-      }
-
-      .dot {
-        border-radius: 999px;
-        display: inline-block;
-        height: 9px;
-        width: 9px;
-      }
-
+      .status { align-items: center; display: inline-flex; gap: 8px; font-size: 0.95rem; white-space: nowrap; }
+      .dot { border-radius: 999px; display: inline-block; height: 9px; width: 9px; }
       .dot.ok { background: var(--ok); }
       .dot.warn { background: var(--warn); }
       .dot.bad { background: var(--bad); }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        margin-top: 20px;
-      }
-
-      .tile,
-      .panel {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 14px;
-      }
-
-      .label {
-        color: var(--muted);
-        font-size: 0.82rem;
-      }
-
-      .value {
-        font-size: 1.25rem;
-        margin-top: 6px;
-        overflow-wrap: anywhere;
-      }
-
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 20px; }
+      .tile, .panel { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+      .label { color: var(--muted); font-size: 0.82rem; }
+      .value { font-size: 1.25rem; margin-top: 6px; overflow-wrap: anywhere; }
       .panel { margin-top: 16px; }
-
-      .notice {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        color: var(--muted);
-        margin-top: 16px;
-        padding: 14px;
-      }
-
-      .notice.error {
-        border-color: color-mix(in srgb, var(--bad) 50%, transparent);
-        color: var(--bad);
-      }
-
-      select,
-      input,
-      button {
-        background: Canvas;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        color: CanvasText;
-        font: inherit;
-        min-height: 34px;
-        padding: 4px 10px;
-      }
-
-      button {
-        cursor: pointer;
-        font-weight: 650;
-      }
-
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: white;
-      }
-
-      button.danger {
-        border-color: color-mix(in srgb, var(--bad) 48%, transparent);
-        color: var(--bad);
-      }
-
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.55;
-      }
-
-      .session-form {
-        display: grid;
-        grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto;
-        gap: 10px;
-        margin-top: 12px;
-      }
-
-      .sessions-list {
-        display: grid;
-        gap: 8px;
-        margin-top: 12px;
-      }
-
-      .session-row {
-        align-items: center;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        display: grid;
-        gap: 10px;
-        grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(90px, auto)) auto;
-        padding: 10px;
-      }
-
-      .session-row.active {
-        border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
-      }
-
-      .session-meta {
-        color: var(--muted);
-        font-size: 0.86rem;
-      }
-
+      .notice { border: 1px solid var(--border); border-radius: 8px; color: var(--muted); margin-top: 16px; padding: 14px; }
+      .notice.error { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); }
+      select, input, button { background: Canvas; border: 1px solid var(--border); border-radius: 6px; color: CanvasText; font: inherit; min-height: 34px; padding: 4px 10px; }
+      button { cursor: pointer; font-weight: 650; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+      button.danger { border-color: color-mix(in srgb, var(--bad) 48%, transparent); color: var(--bad); }
+      button:disabled { cursor: not-allowed; opacity: 0.55; }
+      .session-form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto; gap: 10px; margin-top: 12px; }
+      .sessions-list { display: grid; gap: 8px; margin-top: 12px; }
+      .session-row { align-items: center; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 10px; grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(90px, auto)) auto; padding: 10px; }
+      .session-row.active { border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); }
+      .session-meta { color: var(--muted); font-size: 0.86rem; }
       a { color: var(--accent); }
-
-      svg {
-        display: block;
-        height: 320px;
-        overflow: visible;
-        width: 100%;
-      }
-
-      canvas {
-        background: color-mix(in srgb, CanvasText 3%, Canvas);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        display: block;
-        height: 300px;
-        width: 100%;
-      }
-
-      .axis,
-      .grid-line { stroke: var(--border); stroke-width: 1; }
+      svg { display: block; height: 320px; overflow: visible; width: 100%; }
+      canvas { background: color-mix(in srgb, CanvasText 3%, Canvas); border: 1px solid var(--border); border-radius: 6px; display: block; height: 300px; width: 100%; }
+      .axis, .grid-line { stroke: var(--border); stroke-width: 1; }
       .tick-label { fill: var(--muted); font-size: 11px; }
       .spectrum-area { fill: var(--accent-soft); }
       .spectrum-line { fill: none; stroke: var(--accent); stroke-linejoin: round; stroke-width: 2; }
       .dominant-line { stroke: var(--warn); stroke-dasharray: 4 4; stroke-width: 2; }
-
-      .legend {
-        color: var(--muted);
-        display: flex;
-        flex-wrap: wrap;
-        font-size: 0.85rem;
-        gap: 12px;
-        margin-top: 8px;
-      }
-
+      .legend { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 0.85rem; gap: 12px; margin-top: 8px; }
       @media (max-width: 760px) {
         main { padding: 16px; }
-
-        header,
-        .panel-title-row,
-        .session-actions {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .session-form,
-        .session-row {
-          grid-template-columns: 1fr;
-        }
-
-        svg,
-        canvas { height: 260px; }
+        header, .panel-title-row, .session-actions, .history-controls { align-items: flex-start; flex-direction: column; }
+        .session-form, .session-row { grid-template-columns: 1fr; }
+        svg, canvas { height: 260px; }
       }
     </style>
   </head>
@@ -230,10 +66,7 @@
     <main>
       <header>
         <h1>Acoustic Observatory</h1>
-        <div id="status" class="status">
-          <span id="status-dot" class="dot warn"></span>
-          <span id="status-text">Demarrage...</span>
-        </div>
+        <div id="status" class="status"><span id="status-dot" class="dot warn"></span><span id="status-text">Demarrage...</span></div>
       </header>
 
       <section class="grid">
@@ -263,20 +96,30 @@
 
       <section class="panel">
         <div class="panel-title-row">
-          <h2>Waterfall historique</h2>
-          <label class="label">Fenetre
-            <select id="history-window">
-              <option value="5">5 min</option>
-              <option value="10" selected>10 min</option>
-              <option value="30">30 min</option>
-              <option value="60">1 h</option>
-            </select>
-          </label>
+          <h2>Historique</h2>
+          <div class="history-controls">
+            <label class="label">Vue
+              <select id="history-mode">
+                <option value="spectrum" selected>Spectre</option>
+                <option value="a">dB(A)</option>
+                <option value="b">dB(B)</option>
+                <option value="c">dB(C)</option>
+                <option value="ca">Ecart C-A</option>
+              </select>
+            </label>
+            <label class="label">Fenetre
+              <select id="history-window">
+                <option value="5">5 min</option>
+                <option value="10" selected>10 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 h</option>
+              </select>
+            </label>
+          </div>
         </div>
-        <canvas id="waterfall" aria-label="Historique spectral"></canvas>
+        <canvas id="waterfall" aria-label="Historique spectral et pondere"></canvas>
         <div class="legend">
-          <span>Temps : de haut en bas</span>
-          <span>Couleur claire : intensite plus forte</span>
+          <span id="history-mode-label">Spectre : temps de haut en bas</span>
           <span id="history-count">0 mesure</span>
         </div>
       </section>
@@ -315,14 +158,15 @@
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
       const waterfallEl = document.getElementById("waterfall");
+      const historyModeEl = document.getElementById("history-mode");
       const historyWindowEl = document.getElementById("history-window");
+      const historyModeLabelEl = document.getElementById("history-mode-label");
       const historyCountEl = document.getElementById("history-count");
       const sessionLabelEl = document.getElementById("session-label");
       const sessionNotesEl = document.getElementById("session-notes");
       const startSessionEl = document.getElementById("start-session");
       const stopSessionEl = document.getElementById("stop-session");
       const sessionsListEl = document.getElementById("sessions-list");
-
       let activeSessionId = null;
 
       function formatTime(timestamp) {
@@ -346,19 +190,16 @@
 
       function setStatus(state) {
         statusDotEl.className = "dot";
-
         if (!state.connected) {
           statusDotEl.classList.add("bad");
           statusTextEl.textContent = "MQTT deconnecte";
           return;
         }
-
         if (state.stale) {
           statusDotEl.classList.add("warn");
           statusTextEl.textContent = "MQTT connecte, aucune donnee recente";
           return;
         }
-
         statusDotEl.classList.add("ok");
         statusTextEl.textContent = "MQTT connecte";
       }
@@ -379,7 +220,6 @@
         const minFrequency = 20;
         const maxFrequency = 250;
         const maxMagnitude = Math.max(1, ...points.map((point) => point.magnitude));
-
         chartEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
         const x = (frequency) => margin.left + ((frequency - minFrequency) / (maxFrequency - minFrequency)) * plotWidth;
         const y = (magnitude) => margin.top + plotHeight - (magnitude / maxMagnitude) * plotHeight;
@@ -388,25 +228,19 @@
           const yy = margin.top + plotHeight - ratio * plotHeight;
           chartEl.appendChild(svgEl("line", { x1: margin.left, y1: yy, x2: margin.left + plotWidth, y2: yy, class: "grid-line" }));
         }
-
         chartEl.appendChild(svgEl("line", { x1: margin.left, y1: margin.top + plotHeight, x2: margin.left + plotWidth, y2: margin.top + plotHeight, class: "axis" }));
         chartEl.appendChild(svgEl("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotHeight, class: "axis" }));
-
         for (const frequency of [20, 50, 100, 150, 200, 250]) {
           chartEl.appendChild(svgEl("text", { x: x(frequency), y: height - 8, "text-anchor": "middle", class: "tick-label" })).textContent = `${frequency} Hz`;
         }
-
         for (const ratio of [0, 0.5, 1]) {
           chartEl.appendChild(svgEl("text", { x: 8, y: y(maxMagnitude * ratio) + 4, class: "tick-label" })).textContent = `${Math.round(maxMagnitude * ratio)}`;
         }
-
         if (!points.length) return;
         const linePoints = points.map((point) => `${x(point.frequency).toFixed(1)},${y(point.magnitude).toFixed(1)}`).join(" ");
         const areaPoints = [`${x(points[0].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`, linePoints, `${x(points[points.length - 1].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`].join(" ");
-
         chartEl.appendChild(svgEl("polygon", { points: areaPoints, class: "spectrum-area" }));
         chartEl.appendChild(svgEl("polyline", { points: linePoints, class: "spectrum-line" }));
-
         if (dominantFrequency) {
           const xx = x(dominantFrequency);
           chartEl.appendChild(svgEl("line", { x1: xx, y1: margin.top, x2: xx, y2: margin.top + plotHeight, class: "dominant-line" }));
@@ -417,25 +251,16 @@
         const f2 = frequency * frequency;
         const c20 = 20.6 * 20.6;
         const c12200 = 12200 * 12200;
-
         if (curve === "A") {
           const numerator = c12200 * f2 * f2;
-          const denominator =
-            (f2 + c20) *
-            Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) *
-            (f2 + c12200);
+          const denominator = (f2 + c20) * Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + c12200);
           return 20 * Math.log10(numerator / denominator) + 2.0;
         }
-
         if (curve === "B") {
           const numerator = c12200 * frequency * f2;
-          const denominator =
-            (f2 + c20) *
-            Math.sqrt(f2 + 158.5 * 158.5) *
-            (f2 + c12200);
+          const denominator = (f2 + c20) * Math.sqrt(f2 + 158.5 * 158.5) * (f2 + c12200);
           return 20 * Math.log10(numerator / denominator) + 0.17;
         }
-
         const numerator = c12200 * f2;
         const denominator = (f2 + c20) * (f2 + c12200);
         return 20 * Math.log10(numerator / denominator) + 0.06;
@@ -443,48 +268,43 @@
 
       function weightedLevel(points, curve) {
         let weightedPower = 0;
-        let unweightedPower = 0;
-
         for (const point of points) {
           if (point.frequency <= 0 || point.magnitude <= 0) continue;
           const power = point.magnitude * point.magnitude;
           const gain = Math.pow(10, weightingDb(point.frequency, curve) / 20);
           weightedPower += power * gain * gain;
-          unweightedPower += power;
         }
-
-        if (weightedPower <= 0 || unweightedPower <= 0) return null;
-
+        if (weightedPower <= 0) return null;
         return 10 * Math.log10(weightedPower);
       }
 
-      function updateWeightedReadings(points) {
+      function weightedMetrics(points) {
         const levelA = weightedLevel(points, "A");
         const levelB = weightedLevel(points, "B");
         const levelC = weightedLevel(points, "C");
+        return {
+          a: levelA,
+          b: levelB,
+          c: levelC,
+          ca: levelA === null || levelC === null ? null : levelC - levelA,
+        };
+      }
 
-        weightedAEl.textContent = levelA === null ? "-" : `${levelA.toFixed(1)} dB(A)`;
-        weightedBEl.textContent = levelB === null ? "-" : `${levelB.toFixed(1)} dB(B)`;
-        weightedCEl.textContent = levelC === null ? "-" : `${levelC.toFixed(1)} dB(C)`;
-
-        if (levelA === null || levelC === null) {
+      function updateWeightedReadings(points) {
+        const levels = weightedMetrics(points);
+        weightedAEl.textContent = levels.a === null ? "-" : `${levels.a.toFixed(1)} dB(A)`;
+        weightedBEl.textContent = levels.b === null ? "-" : `${levels.b.toFixed(1)} dB(B)`;
+        weightedCEl.textContent = levels.c === null ? "-" : `${levels.c.toFixed(1)} dB(C)`;
+        if (levels.ca === null) {
           weightedCaEl.textContent = "-";
           bassReadingEl.textContent = "-";
           return;
         }
-
-        const gap = levelC - levelA;
-        weightedCaEl.textContent = `${gap >= 0 ? "+" : ""}${gap.toFixed(1)} dB`;
-
-        if (gap >= 15) {
-          bassReadingEl.textContent = "Graves tres marques";
-        } else if (gap >= 9) {
-          bassReadingEl.textContent = "Graves marques";
-        } else if (gap >= 5) {
-          bassReadingEl.textContent = "Graves presents";
-        } else {
-          bassReadingEl.textContent = "Graves faibles";
-        }
+        weightedCaEl.textContent = `${levels.ca >= 0 ? "+" : ""}${levels.ca.toFixed(1)} dB`;
+        if (levels.ca >= 15) bassReadingEl.textContent = "Graves tres marques";
+        else if (levels.ca >= 9) bassReadingEl.textContent = "Graves marques";
+        else if (levels.ca >= 5) bassReadingEl.textContent = "Graves presents";
+        else bassReadingEl.textContent = "Graves faibles";
       }
 
       function colorForRatio(ratio) {
@@ -494,27 +314,25 @@
         return `hsl(${hue}, 78%, ${lightness}%)`;
       }
 
-      function drawWaterfall(items) {
+      function prepareCanvas() {
         const rect = waterfallEl.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         const width = Math.max(1, Math.round(rect.width * dpr));
         const height = Math.max(1, Math.round(rect.height * dpr));
         const context = waterfallEl.getContext("2d");
-
         waterfallEl.width = width;
         waterfallEl.height = height;
         context.clearRect(0, 0, width, height);
         context.fillStyle = getComputedStyle(document.body).backgroundColor;
         context.fillRect(0, 0, width, height);
+        return { context, width, height, dpr };
+      }
+
+      function drawWaterfall(items) {
+        const { context, width, height, dpr } = prepareCanvas();
         historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
-
-        if (!items.length) {
-          context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
-          context.font = `${13 * dpr}px system-ui, sans-serif`;
-          context.fillText("En attente d'historique", 16 * dpr, 32 * dpr);
-          return;
-        }
-
+        historyModeLabelEl.textContent = "Spectre : temps de haut en bas, couleur claire = intensite plus forte";
+        if (!items.length) return drawEmptyHistory(context, dpr);
         const frequencies = [...new Set(items.flatMap((item) => item.points.map((point) => point.frequency)))].sort((a, b) => a - b);
         const maxMagnitude = Math.max(1, ...items.flatMap((item) => item.points.map((point) => point.magnitude)));
         const left = 50 * dpr;
@@ -525,7 +343,6 @@
         const plotHeight = height - top - bottom;
         const rowHeight = Math.max(1, plotHeight / items.length);
         const columnWidth = Math.max(1, plotWidth / Math.max(1, frequencies.length));
-
         items.forEach((item, rowIndex) => {
           const byFrequency = new Map(item.points.map((point) => [point.frequency, point.magnitude]));
           const y = top + rowIndex * rowHeight;
@@ -534,22 +351,83 @@
             context.fillRect(left + columnIndex * columnWidth, y, Math.ceil(columnWidth), Math.ceil(rowHeight));
           });
         });
+        drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, items);
+        context.textAlign = "center";
+        for (const frequency of [20, 50, 100, 150, 200, 250]) {
+          const x = left + ((frequency - 20) / (250 - 20)) * plotWidth;
+          context.fillText(`${frequency} Hz`, x, height - 8 * dpr);
+        }
+      }
 
+      function historyValue(item, mode) {
+        const levels = weightedMetrics(item.points || []);
+        return levels[mode];
+      }
+
+      function drawWeightedHistory(items) {
+        const { context, width, height, dpr } = prepareCanvas();
+        const mode = historyModeEl.value;
+        const labels = { a: "dB(A)", b: "dB(B)", c: "dB(C)", ca: "Ecart C-A" };
+        const values = items.map((item) => ({ captured_at: item.captured_at, value: historyValue(item, mode) })).filter((item) => item.value !== null && Number.isFinite(item.value));
+        historyCountEl.textContent = `${values.length} valeur${values.length > 1 ? "s" : ""}`;
+        historyModeLabelEl.textContent = `${labels[mode]} : estimation relative dans le temps`;
+        if (!values.length) return drawEmptyHistory(context, dpr);
+        const left = 54 * dpr;
+        const right = 16 * dpr;
+        const top = 14 * dpr;
+        const bottom = 28 * dpr;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const minValue = Math.min(...values.map((item) => item.value));
+        const maxValue = Math.max(...values.map((item) => item.value));
+        const span = Math.max(1, maxValue - minValue);
+        const x = (index) => left + (index / Math.max(1, values.length - 1)) * plotWidth;
+        const y = (value) => top + plotHeight - ((value - minValue) / span) * plotHeight;
+        context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--border");
+        context.lineWidth = dpr;
+        for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+          const yy = top + plotHeight - ratio * plotHeight;
+          context.beginPath();
+          context.moveTo(left, yy);
+          context.lineTo(left + plotWidth, yy);
+          context.stroke();
+        }
+        context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+        context.lineWidth = 2 * dpr;
+        context.beginPath();
+        values.forEach((item, index) => {
+          const xx = x(index);
+          const yy = y(item.value);
+          if (index === 0) context.moveTo(xx, yy);
+          else context.lineTo(xx, yy);
+        });
+        context.stroke();
+        drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, values);
+        context.textAlign = "left";
+        context.fillText(`${minValue.toFixed(1)}`, 6 * dpr, y(minValue) - 2 * dpr);
+        context.fillText(`${maxValue.toFixed(1)}`, 6 * dpr, y(maxValue) + 4 * dpr);
+      }
+
+      function drawEmptyHistory(context, dpr) {
+        context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+        context.font = `${13 * dpr}px system-ui, sans-serif`;
+        context.fillText("En attente d'historique", 16 * dpr, 32 * dpr);
+      }
+
+      function drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, items) {
         context.strokeStyle = getComputedStyle(document.body).color.replace("rgb(", "rgba(").replace(")", ", 0.18)");
         context.lineWidth = dpr;
         context.strokeRect(left, top, plotWidth, plotHeight);
         context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
         context.font = `${11 * dpr}px system-ui, sans-serif`;
-        context.textAlign = "center";
-
-        for (const frequency of [20, 50, 100, 150, 200, 250]) {
-          const x = left + ((frequency - 20) / (250 - 20)) * plotWidth;
-          context.fillText(`${frequency} Hz`, x, height - 8 * dpr);
-        }
-
         context.textAlign = "left";
         context.fillText(formatTime(items[0].captured_at), 4 * dpr, top + 12 * dpr);
         context.fillText(formatTime(items[items.length - 1].captured_at), 4 * dpr, top + plotHeight);
+      }
+
+      function drawHistory(items) {
+        if (historyModeEl.value === "spectrum") drawWaterfall(items);
+        else drawWeightedHistory(items);
       }
 
       function updateSignature(state) {
@@ -557,19 +435,9 @@
         const nuisanceScore = signature.nuisance_score;
         const nuisanceMatch = signature.nuisance_match;
         const bestMatch = signature.best_match;
-
-        nuisanceScoreEl.textContent = nuisanceScore === null || nuisanceScore === undefined
-          ? "-"
-          : `${nuisanceScore.toFixed(1)} %`;
-        bestMatchEl.textContent = bestMatch
-          ? `${bestMatch.label} (${bestMatch.similarity.toFixed(1)} %)`
-          : "-";
-
-        if (nuisanceMatch) {
-          nuisanceScoreEl.title = `Reference : ${nuisanceMatch.label}`;
-        } else {
-          nuisanceScoreEl.title = "Creez une session nommee nuisance ou entrepot pour activer ce score.";
-        }
+        nuisanceScoreEl.textContent = nuisanceScore === null || nuisanceScore === undefined ? "-" : `${nuisanceScore.toFixed(1)} %`;
+        bestMatchEl.textContent = bestMatch ? `${bestMatch.label} (${bestMatch.similarity.toFixed(1)} %)` : "-";
+        nuisanceScoreEl.title = nuisanceMatch ? `Reference : ${nuisanceMatch.label}` : "Creez une session nommee nuisance ou entrepot pour activer ce score.";
       }
 
       function updateSessionState(state) {
@@ -591,7 +459,6 @@
 
       function renderSessions(sessions) {
         sessionsListEl.replaceChildren();
-
         if (!sessions.length) {
           const empty = document.createElement("div");
           empty.className = "session-meta";
@@ -599,23 +466,17 @@
           sessionsListEl.appendChild(empty);
           return;
         }
-
         for (const session of sessions) {
           const row = document.createElement("div");
           row.className = `session-row${session.active ? " active" : ""}`;
-
           const title = document.createElement("div");
           title.innerHTML = `<strong>${escapeHtml(session.label)}</strong><div class="session-meta">${formatTime(session.started_at)} - ${session.active ? "en cours" : formatDuration(session.duration_seconds)}</div>`;
-
           const samples = document.createElement("div");
           samples.innerHTML = `<div class="label">Mesures</div><div>${session.sample_count}</div>`;
-
           const dominant = document.createElement("div");
           dominant.innerHTML = `<div class="label">Moy. Hz</div><div>${session.average_dominant_frequency ? session.average_dominant_frequency.toFixed(1) : "-"}</div>`;
-
           const signature = document.createElement("div");
           signature.innerHTML = `<div class="label">Signature</div><div>${session.has_signature ? "OK" : "attente"}</div>`;
-
           const action = document.createElement("div");
           if (session.active) {
             action.textContent = "Session active";
@@ -626,16 +487,13 @@
             link.textContent = "CSV";
             action.appendChild(link);
           }
-
           row.append(title, samples, dominant, signature, action);
           sessionsListEl.appendChild(row);
         }
       }
 
       function escapeHtml(value) {
-        return String(value).replace(/[&<>'"]/g, (char) => ({
-          "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
-        }[char]));
+        return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
       }
 
       async function refreshState() {
@@ -643,13 +501,11 @@
         const state = await response.json();
         const spectrum = state.spectrum || {};
         const points = spectrum.points || [];
-
         setStatus(state);
         updateNotice(state);
         updateSessionState(state);
         updateSignature(state);
         updateWeightedReadings(points);
-
         topicEl.textContent = state.topic || "-";
         messagesEl.textContent = state.message_count || 0;
         lastUpdateEl.textContent = state.last_message_at ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})` : "-";
@@ -660,7 +516,7 @@
       async function refreshHistory() {
         const response = await fetch(`api/history?minutes=${historyWindowEl.value}`);
         const history = await response.json();
-        drawWaterfall(history.items || []);
+        drawHistory(history.items || []);
       }
 
       async function refreshSessions() {
@@ -704,8 +560,8 @@
       startSessionEl.addEventListener("click", () => startSession().catch((error) => alert(error.message)));
       stopSessionEl.addEventListener("click", () => stopSession().catch((error) => alert(error.message)));
       historyWindowEl.addEventListener("change", refreshHistory);
+      historyModeEl.addEventListener("change", refreshHistory);
       window.addEventListener("resize", refreshHistory);
-
       refresh();
       setInterval(refresh, 3000);
     </script>
