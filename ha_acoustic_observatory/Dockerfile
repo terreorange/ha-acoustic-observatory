@@ -8,5 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py ./
 COPY web ./web
+COPY run.sh /run.sh
 
-CMD ["python", "/app/app.py"]
+RUN chmod a+x /run.sh
+
+CMD ["/run.sh"]
