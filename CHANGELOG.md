@@ -18,6 +18,13 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.2.2] - 2026-07-26
+
+### Fixed
+
+- Home Assistant add-on now explicitly enables Supervisor API access so it can read the internal MQTT service credentials.
+- MQTT authentication failures now explain whether the add-on was using Supervisor-provided credentials or fallback settings.
+
 ## [0.2.1] - 2026-07-26
 
 ### Fixed
