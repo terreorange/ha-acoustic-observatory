@@ -45,6 +45,7 @@ def load_options():
 def supervisor_mqtt_settings():
     token = os.getenv("SUPERVISOR_TOKEN")
     if not token:
+        state["error"] = "Supervisor token unavailable; MQTT service lookup disabled"
         return None
 
     request = urllib.request.Request(
@@ -61,6 +62,7 @@ def supervisor_mqtt_settings():
 
     data = payload.get("data", payload)
     if not data.get("host"):
+        state["error"] = "Supervisor MQTT service did not return a broker host"
         return None
 
     return {
@@ -84,6 +86,24 @@ def mqtt_settings():
         "password": os.getenv("MQTT_PASSWORD"),
         "source": "fallback",
     }
+
+
+def mqtt_error_message(prefix, result_code):
+    source = state.get("mqtt_source", "unknown")
+
+    if result_code == 5:
+        if source == "fallback":
+            return (
+                f"{prefix}: authentication refused (code 5). "
+                "Supervisor MQTT settings were unavailable; using fallback credentials."
+            )
+
+        return (
+            f"{prefix}: authentication refused (code 5) "
+            f"using {source} MQTT credentials."
+        )
+
+    return f"{prefix}: {result_code}"
 
 
 def parse_spectrum(payload):
@@ -146,14 +166,14 @@ def on_connect(client, userdata, flags, result_code):
         client.subscribe(state["topic"])
     else:
         state["connected"] = False
-        state["error"] = f"MQTT connect failed: {result_code}"
+        state["error"] = mqtt_error_message("MQTT connect failed", result_code)
 
 
 def on_disconnect(client, userdata, result_code):
     state["connected"] = False
 
     if result_code != 0:
-        state["error"] = f"MQTT disconnected: {result_code}"
+        state["error"] = mqtt_error_message("MQTT disconnected", result_code)
 
 
 def on_message(client, userdata, message):
