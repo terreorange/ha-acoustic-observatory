@@ -1,37 +1,81 @@
-# Atom Echo Noise
+# HA Acoustic Observatory
 
-Capteur acoustique expérimental basé sur un M5Stack Atom Echo, destiné à suivre un bourdonnement grave et à publier les mesures dans Home Assistant via MQTT.
+HA Acoustic Observatory is an experimental acoustic monitoring project for Home Assistant. It started as a low-cost M5Stack Atom Echo sensor built to observe low-frequency hum from refrigeration equipment, but the repository is structured to grow into a complete acoustic observatory: firmware, Home Assistant add-on, documentation, and analysis tools.
 
-## État actuel
+The project is not intended to produce regulatory acoustic measurements in dB(A). Its goal is to reveal trends, recurring low-frequency signatures, and changes over time.
 
-La version initiale valide toute la chaîne :
+## Current Scope
 
-1. connexion Wi-Fi ;
-2. connexion au broker Mosquitto ;
-3. publication MQTT ;
-4. découverte automatique dans Home Assistant ;
-5. publication d'un compteur de test.
+The current working firmware runs on a M5Stack Atom Echo and publishes acoustic indicators to Home Assistant through MQTT:
 
-## Installation
+- raw audio RMS level;
+- normalized 0-100 indices for low-frequency bands;
+- low-frequency share in percent;
+- dominant low-frequency peak;
+- a compact JSON spectrum from 20 Hz to 250 Hz.
 
-1. Copier `include/secrets.example.h` vers `include/secrets.h`.
-2. Renseigner le Wi-Fi et les identifiants MQTT.
-3. Ouvrir le dossier dans VS Code avec PlatformIO.
-4. Téléverser le firmware.
-5. Ouvrir le moniteur série à 115200 bauds.
+## Repository Layout
 
-## Vérification
+```text
+ha-acoustic-observatory/
+├── firmware/                 # M5Stack Atom Echo PlatformIO firmware
+├── home-assistant-app/        # Future Home Assistant add-on / web observatory
+├── docs/                      # Architecture and protocol documentation
+├── .github/workflows/         # CI entry points
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── LICENSE
+└── README.md
+```
 
-Home Assistant doit découvrir un appareil nommé **Atom Echo bruit** avec une entité **Compteur**.
+## Architecture
 
-## Objectif final
+```text
+M5Stack Atom Echo
+    |
+    | MQTT
+    v
+Mosquitto broker
+    |
+    +--> Home Assistant entities
+    |
+    +--> Future acoustic observatory add-on
+         ├── real-time spectrum
+         ├── waterfall view
+         ├── labeled measurement sessions
+         └── signature detection
+```
 
-Le compteur sera progressivement remplacé par :
+## Firmware Quick Start
 
-- un niveau audio relatif ;
-- l'énergie dans les bandes basses fréquences ;
-- la fréquence dominante ;
-- un indicateur de bourdonnement ;
-- un historique exploitable dans Home Assistant.
+1. Open the `firmware/` directory in VS Code with PlatformIO.
+2. Copy `firmware/include/secrets.example.h` to `firmware/include/secrets.h`.
+3. Fill in Wi-Fi and MQTT settings.
+4. Build and upload the firmware to the Atom Echo.
+5. Check Home Assistant MQTT discovery for the `Atom Echo bruit` device.
 
-Ce projet ne vise pas à produire une mesure acoustique réglementaire en dB(A).
+More details are in [docs/firmware.md](docs/firmware.md).
+
+## Home Assistant Add-on
+
+The `home-assistant-app/` directory is a foundation for the future integrated observatory. The intended first version will subscribe to the firmware spectrum topic, store measurements locally, and expose an Ingress web UI inside Home Assistant.
+
+This part is intentionally marked as early-stage until it has been tested on Home Assistant OS.
+
+## MQTT Topics
+
+The firmware publishes retained scalar states under `atom_echo_noise/...` and the detailed spectrum under:
+
+```text
+atom_echo_noise/spectrum/state
+```
+
+See [docs/mqtt.md](docs/mqtt.md) for the topic contract.
+
+## Roadmap
+
+See [docs/roadmap.md](docs/roadmap.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
