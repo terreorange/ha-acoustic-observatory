@@ -18,6 +18,13 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.2.1] - 2026-07-26
+
+### Fixed
+
+- MQTT broker connection now reads the Home Assistant Supervisor `mqtt` service configuration automatically.
+- MQTT callbacks now use the stable Paho callback API v1 to avoid callback signature drift.
+
 ## [0.2.0] - 2026-07-26
 
 ### Added

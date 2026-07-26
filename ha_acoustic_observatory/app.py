@@ -2,6 +2,8 @@ import json
 import os
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
@@ -13,6 +15,7 @@ OPTIONS_PATH = Path("/data/options.json")
 
 DEFAULT_TOPIC = "atom_echo_noise/spectrum/state"
 STALE_AFTER_SECONDS = 30
+SUPERVISOR_MQTT_URL = "http://supervisor/services/mqtt"
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 
@@ -23,6 +26,7 @@ state = {
     "last_spectrum": None,
     "message_count": 0,
     "error": None,
+    "mqtt_source": "fallback",
 }
 
 
@@ -38,33 +42,48 @@ def load_options():
         return {"mqtt_topic": DEFAULT_TOPIC}
 
 
+def supervisor_mqtt_settings():
+    token = os.getenv("SUPERVISOR_TOKEN")
+    if not token:
+        return None
+
+    request = urllib.request.Request(
+        SUPERVISOR_MQTT_URL,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        state["error"] = f"Could not read Supervisor MQTT service: {exc}"
+        return None
+
+    data = payload.get("data", payload)
+    if not data.get("host"):
+        return None
+
+    return {
+        "host": data.get("host"),
+        "port": int(data.get("port", 1883)),
+        "username": data.get("username"),
+        "password": data.get("password"),
+        "source": "supervisor",
+    }
+
+
 def mqtt_settings():
+    supervisor_settings = supervisor_mqtt_settings()
+    if supervisor_settings:
+        return supervisor_settings
+
     return {
         "host": os.getenv("MQTT_HOST", "core-mosquitto"),
         "port": int(os.getenv("MQTT_PORT", "1883")),
         "username": os.getenv("MQTT_USERNAME"),
         "password": os.getenv("MQTT_PASSWORD"),
+        "source": "fallback",
     }
-
-
-def is_success_reason(reason_code):
-    if reason_code == 0:
-        return True
-
-    value = getattr(reason_code, "value", None)
-    if value == 0:
-        return True
-
-    is_failure = getattr(reason_code, "is_failure", None)
-    if callable(is_failure):
-        return not is_failure()
-    if is_failure is not None:
-        return not is_failure
-
-    try:
-        return int(reason_code) == 0
-    except (TypeError, ValueError):
-        return str(reason_code).lower() == "success"
 
 
 def parse_spectrum(payload):
@@ -120,22 +139,21 @@ def summarize_spectrum(payload):
     }
 
 
-def on_connect(client, userdata, flags, reason_code, properties=None):
-    if is_success_reason(reason_code):
+def on_connect(client, userdata, flags, result_code):
+    if result_code == 0:
         state["connected"] = True
         state["error"] = None
         client.subscribe(state["topic"])
     else:
         state["connected"] = False
-        state["error"] = f"MQTT connect failed: {reason_code}"
+        state["error"] = f"MQTT connect failed: {result_code}"
 
 
-def on_disconnect(client, userdata, *args):
+def on_disconnect(client, userdata, result_code):
     state["connected"] = False
 
-    reason = args[-2] if len(args) >= 2 else args[-1] if args else None
-    if reason and not is_success_reason(reason):
-        state["error"] = f"MQTT disconnected: {reason}"
+    if result_code != 0:
+        state["error"] = f"MQTT disconnected: {result_code}"
 
 
 def on_message(client, userdata, message):
@@ -155,17 +173,19 @@ def mqtt_worker():
     options = load_options()
     state["topic"] = options.get("mqtt_topic", DEFAULT_TOPIC)
 
-    settings = mqtt_settings()
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-
-    if settings["username"] and settings["password"]:
-        client.username_pw_set(settings["username"], settings["password"])
-
-    client.on_connect = on_connect
-    client.on_disconnect = on_disconnect
-    client.on_message = on_message
-
     while True:
+        settings = mqtt_settings()
+        state["mqtt_source"] = settings.get("source", "fallback")
+
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+
+        if settings["username"] and settings["password"]:
+            client.username_pw_set(settings["username"], settings["password"])
+
+        client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+        client.on_message = on_message
+
         try:
             client.connect(settings["host"], settings["port"], keepalive=60)
             client.loop_forever()
@@ -200,6 +220,7 @@ def api_state():
             "error": state["error"],
             "age_seconds": age_seconds,
             "stale": age_seconds is None or age_seconds > STALE_AFTER_SECONDS,
+            "mqtt_source": state["mqtt_source"],
             "spectrum": summary,
         }
     )
