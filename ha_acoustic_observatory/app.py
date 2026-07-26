@@ -46,8 +46,28 @@ def mqtt_settings():
     }
 
 
+def is_success_reason(reason_code):
+    if reason_code == 0:
+        return True
+
+    value = getattr(reason_code, "value", None)
+    if value == 0:
+        return True
+
+    is_failure = getattr(reason_code, "is_failure", None)
+    if callable(is_failure):
+        return not is_failure()
+    if is_failure is not None:
+        return not is_failure
+
+    try:
+        return int(reason_code) == 0
+    except (TypeError, ValueError):
+        return str(reason_code).lower() == "success"
+
+
 def on_connect(client, userdata, flags, reason_code, properties=None):
-    if int(reason_code) == 0:
+    if is_success_reason(reason_code):
         state["connected"] = True
         state["error"] = None
         client.subscribe(state["topic"])
