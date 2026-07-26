@@ -18,6 +18,17 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.4.0] - 2026-07-26
+
+### Added
+
+- Measurement sessions with labels and optional notes.
+- Session start and stop controls in the Home Assistant add-on UI.
+- Session summaries with duration, sample count, average dominant frequency, and signature status.
+- CSV export for completed measurement sessions.
+- First spectral signature comparison against completed sessions.
+- Nuisance score based on completed sessions whose label mentions nuisance, entrepot, ronron, group, or cold-room context.
+
 ## [0.3.0] - 2026-07-26
 
 ### Added
