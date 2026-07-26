@@ -42,10 +42,36 @@ def load_options():
         return {"mqtt_topic": DEFAULT_TOPIC}
 
 
+def as_bool(value):
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+def environment_mqtt_settings():
+    """Read the MQTT details injected by run.sh through Bashio."""
+    host = os.getenv("MQTT_HOST")
+    if not host:
+        return None
+
+    try:
+        port = int(os.getenv("MQTT_PORT", "1883"))
+    except ValueError:
+        state["error"] = "Home Assistant MQTT service returned an invalid port"
+        return None
+
+    return {
+        "host": host,
+        "port": port,
+        "username": os.getenv("MQTT_USERNAME"),
+        "password": os.getenv("MQTT_PASSWORD"),
+        "ssl": as_bool(os.getenv("MQTT_SSL", "false")),
+        "source": "service",
+    }
+
+
 def supervisor_mqtt_settings():
+    """Fallback for installations where service variables are unavailable."""
     token = os.getenv("SUPERVISOR_TOKEN")
     if not token:
-        state["error"] = "Supervisor token unavailable; MQTT service lookup disabled"
         return None
 
     request = urllib.request.Request(
@@ -56,25 +82,34 @@ def supervisor_mqtt_settings():
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        state["error"] = f"Could not read Supervisor MQTT service: {exc}"
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
         return None
 
     data = payload.get("data", payload)
+
     if not data.get("host"):
-        state["error"] = "Supervisor MQTT service did not return a broker host"
+        return None
+
+    try:
+        port = int(data.get("port", 1883))
+    except (TypeError, ValueError):
         return None
 
     return {
         "host": data.get("host"),
-        "port": int(data.get("port", 1883)),
+        "port": port,
         "username": data.get("username"),
         "password": data.get("password"),
+        "ssl": as_bool(data.get("ssl", False)),
         "source": "supervisor",
     }
 
 
 def mqtt_settings():
+    service_settings = environment_mqtt_settings()
+    if service_settings:
+        return service_settings
+
     supervisor_settings = supervisor_mqtt_settings()
     if supervisor_settings:
         return supervisor_settings
@@ -84,6 +119,7 @@ def mqtt_settings():
         "port": int(os.getenv("MQTT_PORT", "1883")),
         "username": os.getenv("MQTT_USERNAME"),
         "password": os.getenv("MQTT_PASSWORD"),
+        "ssl": as_bool(os.getenv("MQTT_SSL", "false")),
         "source": "fallback",
     }
 
@@ -92,10 +128,17 @@ def mqtt_error_message(prefix, result_code):
     source = state.get("mqtt_source", "unknown")
 
     if result_code == 5:
+        if source == "service":
+            return (
+                f"{prefix}: authentication refused (code 5) using credentials "
+                "provided by Home Assistant's MQTT service."
+            )
+
         if source == "fallback":
             return (
                 f"{prefix}: authentication refused (code 5). "
-                "Supervisor MQTT settings were unavailable; using fallback credentials."
+                "Home Assistant MQTT service settings were unavailable; "
+                "using fallback credentials."
             )
 
         return (
@@ -201,6 +244,9 @@ def mqtt_worker():
 
         if settings["username"] and settings["password"]:
             client.username_pw_set(settings["username"], settings["password"])
+
+        if settings["ssl"]:
+            client.tls_set()
 
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect
