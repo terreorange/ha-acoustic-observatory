@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,6 +8,16 @@
       :root {
         color-scheme: light dark;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --border: color-mix(in srgb, CanvasText 14%, transparent);
+        --muted: color-mix(in srgb, CanvasText 62%, transparent);
+        --accent: #0097a7;
+        --ok: #1f9d55;
+        --warn: #c77700;
+        --bad: #c62828;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
@@ -17,7 +27,7 @@
       }
 
       main {
-        max-width: 960px;
+        max-width: 1120px;
         margin: 0 auto;
         padding: 24px;
       }
@@ -27,48 +37,138 @@
         align-items: baseline;
         justify-content: space-between;
         gap: 16px;
-        border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+        border-bottom: 1px solid var(--border);
         padding-bottom: 16px;
       }
 
       h1 {
-        font-size: 1.6rem;
+        font-size: 1.55rem;
         margin: 0;
       }
 
-      .status {
-        font-size: 0.95rem;
+      h2 {
+        font-size: 1rem;
+        margin: 0 0 12px;
       }
+
+      .status {
+        align-items: center;
+        display: inline-flex;
+        gap: 8px;
+        font-size: 0.95rem;
+        white-space: nowrap;
+      }
+
+      .dot {
+        border-radius: 999px;
+        display: inline-block;
+        height: 9px;
+        width: 9px;
+      }
+
+      .dot.ok { background: var(--ok); }
+      .dot.warn { background: var(--warn); }
+      .dot.bad { background: var(--bad); }
 
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
         margin-top: 20px;
       }
 
-      .tile {
-        border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+      .tile,
+      .panel {
+        border: 1px solid var(--border);
         border-radius: 8px;
         padding: 14px;
       }
 
       .label {
-        font-size: 0.85rem;
-        opacity: 0.7;
+        color: var(--muted);
+        font-size: 0.82rem;
       }
 
       .value {
-        font-size: 1.35rem;
+        font-size: 1.25rem;
         margin-top: 6px;
+        overflow-wrap: anywhere;
       }
 
-      pre {
-        overflow: auto;
-        border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+      .panel {
+        margin-top: 16px;
+      }
+
+      .notice {
+        border: 1px solid var(--border);
         border-radius: 8px;
+        color: var(--muted);
+        margin-top: 16px;
         padding: 14px;
-        margin-top: 20px;
+      }
+
+      .notice.error {
+        border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+        color: var(--bad);
+      }
+
+      svg {
+        display: block;
+        height: 320px;
+        overflow: visible;
+        width: 100%;
+      }
+
+      .axis,
+      .grid-line {
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .tick-label {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+
+      .spectrum-area {
+        fill: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+
+      .spectrum-line {
+        fill: none;
+        stroke: var(--accent);
+        stroke-linejoin: round;
+        stroke-width: 2;
+      }
+
+      .dominant-line {
+        stroke: var(--warn);
+        stroke-dasharray: 4 4;
+        stroke-width: 2;
+      }
+
+      .legend {
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 16px;
+        }
+
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        svg {
+          height: 260px;
+        }
       }
     </style>
   </head>
@@ -76,57 +176,242 @@
     <main>
       <header>
         <h1>Acoustic Observatory</h1>
-        <div id="status" class="status">Starting...</div>
+        <div id="status" class="status">
+          <span id="status-dot" class="dot warn"></span>
+          <span id="status-text">Démarrage...</span>
+        </div>
       </header>
 
       <section class="grid">
         <div class="tile">
-          <div class="label">MQTT topic</div>
+          <div class="label">Topic MQTT</div>
           <div id="topic" class="value">-</div>
         </div>
         <div class="tile">
-          <div class="label">Messages</div>
+          <div class="label">Messages reçus</div>
           <div id="messages" class="value">0</div>
         </div>
         <div class="tile">
-          <div class="label">Last update</div>
+          <div class="label">Dernière mesure</div>
           <div id="last-update" class="value">-</div>
+        </div>
+        <div class="tile">
+          <div class="label">Fréquence dominante</div>
+          <div id="dominant-frequency" class="value">-</div>
         </div>
       </section>
 
-      <pre id="spectrum">Waiting for spectrum data...</pre>
+      <section class="panel">
+        <h2>Spectre 20-250 Hz</h2>
+        <svg id="chart" role="img" aria-label="Spectre des basses fréquences"></svg>
+        <div class="legend">
+          <span>Ligne bleue : intensité relative par fréquence</span>
+          <span>Ligne orange : fréquence dominante</span>
+        </div>
+      </section>
+
+      <div id="notice" class="notice">En attente des premières données du capteur.</div>
     </main>
 
     <script>
-      const statusEl = document.getElementById("status");
+      const statusDotEl = document.getElementById("status-dot");
+      const statusTextEl = document.getElementById("status-text");
       const topicEl = document.getElementById("topic");
       const messagesEl = document.getElementById("messages");
       const lastUpdateEl = document.getElementById("last-update");
-      const spectrumEl = document.getElementById("spectrum");
+      const dominantFrequencyEl = document.getElementById("dominant-frequency");
+      const noticeEl = document.getElementById("notice");
+      const chartEl = document.getElementById("chart");
 
       function formatTime(timestamp) {
         if (!timestamp) return "-";
         return new Date(timestamp * 1000).toLocaleTimeString();
       }
 
+      function formatAge(seconds) {
+        if (seconds === null || seconds === undefined) return "aucune donnée";
+        if (seconds < 2) return "à l'instant";
+        if (seconds < 60) return `${seconds} s`;
+        return `${Math.round(seconds / 60)} min`;
+      }
+
+      function setStatus(state) {
+        statusDotEl.className = "dot";
+
+        if (!state.connected) {
+          statusDotEl.classList.add("bad");
+          statusTextEl.textContent = "MQTT déconnecté";
+          return;
+        }
+
+        if (state.stale) {
+          statusDotEl.classList.add("warn");
+          statusTextEl.textContent = "MQTT connecté, aucune donnée récente";
+          return;
+        }
+
+        statusDotEl.classList.add("ok");
+        statusTextEl.textContent = "MQTT connecté";
+      }
+
+      function svgEl(name, attributes = {}) {
+        const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+        for (const [key, value] of Object.entries(attributes)) {
+          element.setAttribute(key, value);
+        }
+        return element;
+      }
+
+      function drawChart(points, dominantFrequency) {
+        chartEl.replaceChildren();
+
+        const width = 900;
+        const height = 320;
+        const margin = { top: 18, right: 24, bottom: 34, left: 52 };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        const minFrequency = 20;
+        const maxFrequency = 250;
+        const maxMagnitude = Math.max(1, ...points.map((point) => point.magnitude));
+
+        chartEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+        const x = (frequency) =>
+          margin.left + ((frequency - minFrequency) / (maxFrequency - minFrequency)) * plotWidth;
+        const y = (magnitude) =>
+          margin.top + plotHeight - (magnitude / maxMagnitude) * plotHeight;
+
+        for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+          const yy = margin.top + plotHeight - ratio * plotHeight;
+          chartEl.appendChild(svgEl("line", {
+            x1: margin.left,
+            y1: yy,
+            x2: margin.left + plotWidth,
+            y2: yy,
+            class: "grid-line",
+          }));
+        }
+
+        chartEl.appendChild(svgEl("line", {
+          x1: margin.left,
+          y1: margin.top + plotHeight,
+          x2: margin.left + plotWidth,
+          y2: margin.top + plotHeight,
+          class: "axis",
+        }));
+
+        chartEl.appendChild(svgEl("line", {
+          x1: margin.left,
+          y1: margin.top,
+          x2: margin.left,
+          y2: margin.top + plotHeight,
+          class: "axis",
+        }));
+
+        for (const frequency of [20, 50, 100, 150, 200, 250]) {
+          const xx = x(frequency);
+          chartEl.appendChild(svgEl("text", {
+            x: xx,
+            y: height - 8,
+            "text-anchor": "middle",
+            class: "tick-label",
+          })).textContent = `${frequency} Hz`;
+        }
+
+        for (const ratio of [0, 0.5, 1]) {
+          chartEl.appendChild(svgEl("text", {
+            x: 8,
+            y: y(maxMagnitude * ratio) + 4,
+            class: "tick-label",
+          })).textContent = `${Math.round(maxMagnitude * ratio)}`;
+        }
+
+        if (!points.length) return;
+
+        const linePoints = points
+          .map((point) => `${x(point.frequency).toFixed(1)},${y(point.magnitude).toFixed(1)}`)
+          .join(" ");
+
+        const areaPoints = [
+          `${x(points[0].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`,
+          linePoints,
+          `${x(points[points.length - 1].frequency).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`,
+        ].join(" ");
+
+        chartEl.appendChild(svgEl("polygon", {
+          points: areaPoints,
+          class: "spectrum-area",
+        }));
+
+        chartEl.appendChild(svgEl("polyline", {
+          points: linePoints,
+          class: "spectrum-line",
+        }));
+
+        if (dominantFrequency) {
+          const xx = x(dominantFrequency);
+          chartEl.appendChild(svgEl("line", {
+            x1: xx,
+            y1: margin.top,
+            x2: xx,
+            y2: margin.top + plotHeight,
+            class: "dominant-line",
+          }));
+        }
+      }
+
+      function updateNotice(state) {
+        noticeEl.className = "notice";
+
+        if (state.error) {
+          noticeEl.classList.add("error");
+          noticeEl.textContent = state.error;
+          return;
+        }
+
+        if (!state.connected) {
+          noticeEl.textContent = "Connexion au broker MQTT en cours.";
+          return;
+        }
+
+        if (state.message_count === 0) {
+          noticeEl.textContent = "MQTT est connecté. En attente du premier spectre publié par l'Atom Echo.";
+          return;
+        }
+
+        if (state.stale) {
+          noticeEl.textContent = `Dernier spectre reçu il y a ${formatAge(state.age_seconds)}.`;
+          return;
+        }
+
+        noticeEl.textContent = "Spectre reçu en temps réel.";
+      }
+
       async function refresh() {
         try {
           const response = await fetch("api/state");
           const state = await response.json();
+          const spectrum = state.spectrum || {};
+          const points = spectrum.points || [];
 
-          statusEl.textContent = state.connected ? "MQTT connected" : "MQTT disconnected";
+          setStatus(state);
+          updateNotice(state);
+
           topicEl.textContent = state.topic || "-";
           messagesEl.textContent = state.message_count || 0;
-          lastUpdateEl.textContent = formatTime(state.last_message_at);
+          lastUpdateEl.textContent = state.last_message_at
+            ? `${formatTime(state.last_message_at)} (${formatAge(state.age_seconds)})`
+            : "-";
+          dominantFrequencyEl.textContent = spectrum.dominant_frequency
+            ? `${spectrum.dominant_frequency.toFixed(1)} Hz`
+            : "-";
 
-          if (state.last_spectrum) {
-            spectrumEl.textContent = JSON.stringify(state.last_spectrum, null, 2);
-          } else if (state.error) {
-            spectrumEl.textContent = state.error;
-          }
+          drawChart(points, spectrum.dominant_frequency);
         } catch (error) {
-          statusEl.textContent = "UI disconnected";
-          spectrumEl.textContent = String(error);
+          statusDotEl.className = "dot bad";
+          statusTextEl.textContent = "Interface déconnectée";
+          noticeEl.className = "notice error";
+          noticeEl.textContent = String(error);
         }
       }
 
