@@ -18,6 +18,13 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.2.3] - 2026-07-26
+
+### Fixed
+
+- The add-on now obtains its MQTT host, port, username, password, and TLS setting from Home Assistant's declared MQTT service at startup.
+- The application now prefers those service settings over direct Supervisor and fallback configuration.
+
 ## [0.2.2] - 2026-07-26
 
 ### Fixed
