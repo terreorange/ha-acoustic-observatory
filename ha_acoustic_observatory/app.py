@@ -1,4 +1,7 @@
+import csv
+import io
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -8,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR / "web"
@@ -20,6 +23,8 @@ DEFAULT_TOPIC = "atom_echo_noise/spectrum/state"
 STALE_AFTER_SECONDS = 30
 SUPERVISOR_MQTT_URL = "http://supervisor/services/mqtt"
 MAX_HISTORY_ROWS = 720
+SIGNATURE_MIN_SAMPLES = 3
+NUISANCE_KEYWORDS = ("nuisance", "entrepot", "entrepôt", "ronron", "groupe", "froid")
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 state_lock = threading.Lock()
@@ -132,9 +137,10 @@ def mqtt_settings():
     }
 
 
-def mqtt_error_message(prefix, result_code):
-    with state_lock:
-        source = state.get("mqtt_source", "unknown")
+def mqtt_error_message(prefix, result_code, source=None):
+    if source is None:
+        with state_lock:
+            source = state.get("mqtt_source", "unknown")
 
     if result_code == 5:
         if source == "service":
@@ -182,72 +188,23 @@ def init_database():
                 ON spectra (captured_at)
                 """
             )
-
-
-def save_spectrum(captured_at, payload, summary):
-    with database_lock:
-        with sqlite3.connect(DATABASE_PATH) as connection:
             connection.execute(
                 """
-                INSERT INTO spectra (
-                    captured_at,
-                    dominant_frequency,
-                    dominant_magnitude,
-                    max_magnitude,
-                    low_band_magnitude,
-                    payload
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    captured_at,
-                    summary["dominant_frequency"],
-                    summary["dominant_magnitude"],
-                    summary["max_magnitude"],
-                    summary["low_band_magnitude"],
-                    json.dumps(payload, separators=(",", ":")),
-                ),
-            )
-
-
-def load_history(minutes):
-    since = time.time() - minutes * 60
-
-    with database_lock:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label TEXT NOT NULL,
+                    notes TEXT NOT NULL DEFAULT '',
+                    started_at REAL NOT NULL,
+                    ended_at REAL
+                )
                 """
-                SELECT captured_at, dominant_frequency, dominant_magnitude,
-                       max_magnitude, low_band_magnitude, payload
-                FROM spectra
-                WHERE captured_at >= ?
-                ORDER BY captured_at DESC
-                LIMIT ?
-                """,
-                (since, MAX_HISTORY_ROWS),
-            ).fetchall()
-
-    rows.reverse()
-    items = []
-
-    for row in rows:
-        try:
-            payload = json.loads(row["payload"])
-        except json.JSONDecodeError:
-            payload = {}
-
-        items.append(
-            {
-                "captured_at": row["captured_at"],
-                "dominant_frequency": row["dominant_frequency"],
-                "dominant_magnitude": row["dominant_magnitude"],
-                "max_magnitude": row["max_magnitude"],
-                "low_band_magnitude": row["low_band_magnitude"],
-                "points": parse_spectrum(payload),
-            }
-        )
-
-    return items
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sessions_started_at
+                ON sessions (started_at)
+                """
+            )
 
 
 def parse_spectrum(payload):
@@ -303,6 +260,298 @@ def summarize_spectrum(payload):
     }
 
 
+def save_spectrum(captured_at, payload, summary):
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.execute(
+                """
+                INSERT INTO spectra (
+                    captured_at,
+                    dominant_frequency,
+                    dominant_magnitude,
+                    max_magnitude,
+                    low_band_magnitude,
+                    payload
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    captured_at,
+                    summary["dominant_frequency"],
+                    summary["dominant_magnitude"],
+                    summary["max_magnitude"],
+                    summary["low_band_magnitude"],
+                    json.dumps(payload, separators=(",", ":")),
+                ),
+            )
+
+
+def spectrum_vector(points):
+    vector = {}
+
+    for point in points:
+        frequency = round(float(point["frequency"]), 1)
+        vector[frequency] = max(0.0, float(point["magnitude"]))
+
+    return vector
+
+
+def normalize_vector(vector):
+    norm = math.sqrt(sum(value * value for value in vector.values()))
+
+    if norm <= 0:
+        return {}
+
+    return {
+        frequency: value / norm
+        for frequency, value in vector.items()
+    }
+
+
+def cosine_similarity(left, right):
+    if not left or not right:
+        return 0.0
+
+    keys = set(left) & set(right)
+
+    if not keys:
+        return 0.0
+
+    return sum(left[key] * right[key] for key in keys)
+
+
+def average_vectors(vectors):
+    totals = {}
+
+    for vector in vectors:
+        for frequency, value in vector.items():
+            totals[frequency] = totals.get(frequency, 0.0) + value
+
+    if not vectors:
+        return {}
+
+    return normalize_vector({
+        frequency: total / len(vectors)
+        for frequency, total in totals.items()
+    })
+
+
+def rows_to_points(rows):
+    items = []
+
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except json.JSONDecodeError:
+            payload = {}
+
+        items.append(
+            {
+                "captured_at": row["captured_at"],
+                "dominant_frequency": row["dominant_frequency"],
+                "dominant_magnitude": row["dominant_magnitude"],
+                "max_magnitude": row["max_magnitude"],
+                "low_band_magnitude": row["low_band_magnitude"],
+                "points": parse_spectrum(payload),
+            }
+        )
+
+    return items
+
+
+def load_history(minutes):
+    since = time.time() - minutes * 60
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT captured_at, dominant_frequency, dominant_magnitude,
+                       max_magnitude, low_band_magnitude, payload
+                FROM spectra
+                WHERE captured_at >= ?
+                ORDER BY captured_at DESC
+                LIMIT ?
+                """,
+                (since, MAX_HISTORY_ROWS),
+            ).fetchall()
+
+    rows.reverse()
+    return rows_to_points(rows)
+
+
+def load_session_rows(session_id):
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            session = connection.execute(
+                """
+                SELECT id, label, notes, started_at, ended_at
+                FROM sessions
+                WHERE id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+
+            if not session:
+                return None, []
+
+            end = session["ended_at"] or time.time()
+            rows = connection.execute(
+                """
+                SELECT captured_at, dominant_frequency, dominant_magnitude,
+                       max_magnitude, low_band_magnitude, payload
+                FROM spectra
+                WHERE captured_at >= ? AND captured_at <= ?
+                ORDER BY captured_at ASC
+                """,
+                (session["started_at"], end),
+            ).fetchall()
+
+    return dict(session), rows
+
+
+def build_session_summary(session, rows):
+    items = rows_to_points(rows)
+    vectors = [normalize_vector(spectrum_vector(item["points"])) for item in items]
+    vectors = [vector for vector in vectors if vector]
+
+    dominant_values = [
+        item["dominant_frequency"] for item in items
+        if item["dominant_frequency"] is not None
+    ]
+    low_values = [item["low_band_magnitude"] for item in items]
+
+    duration = (session["ended_at"] or time.time()) - session["started_at"]
+
+    return {
+        "id": session["id"],
+        "label": session["label"],
+        "notes": session["notes"],
+        "started_at": session["started_at"],
+        "ended_at": session["ended_at"],
+        "active": session["ended_at"] is None,
+        "duration_seconds": max(0, int(duration)),
+        "sample_count": len(items),
+        "average_dominant_frequency": (
+            sum(dominant_values) / len(dominant_values)
+            if dominant_values else None
+        ),
+        "average_low_band_magnitude": (
+            sum(low_values) / len(low_values)
+            if low_values else 0.0
+        ),
+        "has_signature": len(vectors) >= SIGNATURE_MIN_SAMPLES,
+        "signature": average_vectors(vectors),
+    }
+
+
+def list_sessions():
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            sessions = connection.execute(
+                """
+                SELECT id, label, notes, started_at, ended_at
+                FROM sessions
+                ORDER BY started_at DESC
+                LIMIT 30
+                """
+            ).fetchall()
+
+    summaries = []
+
+    for session in sessions:
+        session_dict, rows = load_session_rows(session["id"])
+        if session_dict:
+            summary = build_session_summary(session_dict, rows)
+            summary.pop("signature", None)
+            summaries.append(summary)
+
+    return summaries
+
+
+def active_session():
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            session = connection.execute(
+                """
+                SELECT id, label, notes, started_at, ended_at
+                FROM sessions
+                WHERE ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+    return dict(session) if session else None
+
+
+def current_signature_match(summary):
+    current_vector = normalize_vector(spectrum_vector(summary.get("points", [])))
+
+    if not current_vector:
+        return {
+            "best_match": None,
+            "nuisance_score": None,
+            "nuisance_match": None,
+        }
+
+    completed = []
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            sessions = connection.execute(
+                """
+                SELECT id, label, notes, started_at, ended_at
+                FROM sessions
+                WHERE ended_at IS NOT NULL
+                ORDER BY started_at DESC
+                LIMIT 50
+                """
+            ).fetchall()
+
+    for session in sessions:
+        session_dict, rows = load_session_rows(session["id"])
+        if not session_dict:
+            continue
+
+        candidate = build_session_summary(session_dict, rows)
+        signature = candidate.pop("signature", {})
+
+        if not signature or candidate["sample_count"] < SIGNATURE_MIN_SAMPLES:
+            continue
+
+        score = round(100.0 * cosine_similarity(current_vector, signature), 1)
+        candidate["similarity"] = max(0.0, min(100.0, score))
+        completed.append(candidate)
+
+    if not completed:
+        return {
+            "best_match": None,
+            "nuisance_score": None,
+            "nuisance_match": None,
+        }
+
+    best_match = max(completed, key=lambda item: item["similarity"])
+    nuisance_candidates = [
+        item for item in completed
+        if any(keyword in item["label"].lower() for keyword in NUISANCE_KEYWORDS)
+    ]
+    nuisance_match = (
+        max(nuisance_candidates, key=lambda item: item["similarity"])
+        if nuisance_candidates else None
+    )
+
+    return {
+        "best_match": best_match,
+        "nuisance_score": nuisance_match["similarity"] if nuisance_match else None,
+        "nuisance_match": nuisance_match,
+    }
+
+
 def on_connect(client, userdata, flags, result_code):
     if result_code == 0:
         with state_lock:
@@ -311,17 +560,23 @@ def on_connect(client, userdata, flags, result_code):
             topic = state["topic"]
         client.subscribe(topic)
     else:
+        error = mqtt_error_message("MQTT connect failed", result_code)
         with state_lock:
             state["connected"] = False
-            state["error"] = mqtt_error_message("MQTT connect failed", result_code)
+            state["error"] = error
 
 
 def on_disconnect(client, userdata, result_code):
+    error = None
+
+    if result_code != 0:
+        error = mqtt_error_message("MQTT disconnected", result_code)
+
     with state_lock:
         state["connected"] = False
 
-        if result_code != 0:
-            state["error"] = mqtt_error_message("MQTT disconnected", result_code)
+        if error:
+            state["error"] = error
 
 
 def on_message(client, userdata, message):
@@ -400,6 +655,7 @@ def api_state():
         age_seconds = max(0, int(now - last_message_at))
 
     summary = summarize_spectrum(snapshot["last_spectrum"])
+    signature = current_signature_match(summary)
 
     return jsonify(
         {
@@ -411,6 +667,8 @@ def api_state():
             "age_seconds": age_seconds,
             "stale": age_seconds is None or age_seconds > STALE_AFTER_SECONDS,
             "mqtt_source": snapshot["mqtt_source"],
+            "active_session": active_session(),
+            "signature": signature,
             "spectrum": summary,
         }
     )
@@ -432,6 +690,110 @@ def api_history():
             "count": len(items),
             "items": items,
         }
+    )
+
+
+@app.get("/api/sessions")
+def api_sessions():
+    return jsonify({"sessions": list_sessions()})
+
+
+@app.post("/api/sessions/start")
+def api_start_session():
+    payload = request.get_json(silent=True) or {}
+    label = str(payload.get("label", "")).strip()
+    notes = str(payload.get("notes", "")).strip()
+
+    if not label:
+        return jsonify({"error": "Session label is required"}), 400
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            existing = connection.execute(
+                "SELECT id FROM sessions WHERE ended_at IS NULL LIMIT 1"
+            ).fetchone()
+
+            if existing:
+                return jsonify({"error": "A session is already running"}), 409
+
+            cursor = connection.execute(
+                """
+                INSERT INTO sessions (label, notes, started_at)
+                VALUES (?, ?, ?)
+                """,
+                (label, notes, time.time()),
+            )
+            session_id = cursor.lastrowid
+
+    session, rows = load_session_rows(session_id)
+    return jsonify({"session": build_session_summary(session, rows)})
+
+
+@app.post("/api/sessions/<int:session_id>/stop")
+def api_stop_session(session_id):
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET ended_at = ?
+                WHERE id = ? AND ended_at IS NULL
+                """,
+                (time.time(), session_id),
+            )
+
+            if cursor.rowcount == 0:
+                return jsonify({"error": "Active session not found"}), 404
+
+    session, rows = load_session_rows(session_id)
+    return jsonify({"session": build_session_summary(session, rows)})
+
+
+@app.get("/api/sessions/<int:session_id>/export.csv")
+def api_export_session(session_id):
+    session, rows = load_session_rows(session_id)
+
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "captured_at",
+        "dominant_frequency",
+        "dominant_magnitude",
+        "max_magnitude",
+        "low_band_magnitude",
+        "frequency",
+        "magnitude",
+    ])
+
+    for item in rows_to_points(rows):
+        for point in item["points"]:
+            writer.writerow([
+                item["captured_at"],
+                item["dominant_frequency"],
+                item["dominant_magnitude"],
+                item["max_magnitude"],
+                item["low_band_magnitude"],
+                point["frequency"],
+                point["magnitude"],
+            ])
+
+    safe_label = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_"
+        for char in session["label"].lower()
+    ).strip("_") or "session"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=acoustic_{session_id}_{safe_label}.csv"
+            )
+        },
     )
 
 
