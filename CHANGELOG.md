@@ -18,6 +18,18 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.5.0] - 2026-07-26
+
+### Added
+
+- Estimated A, B, and C weighted level cards in the Home Assistant add-on UI.
+- Estimated `C-A` gap card to highlight low-frequency dominance.
+- Plain-language bass reading based on the estimated `C-A` gap.
+
+### Notes
+
+- Weighted readings are relative, uncalibrated estimates based on the received spectrum. They are intended for trend analysis, not regulatory sound-level measurement.
+
 ## [0.4.0] - 2026-07-26
 
 ### Added
