@@ -19,7 +19,7 @@
       * { box-sizing: border-box; }
       body { margin: 0; background: Canvas; color: CanvasText; }
       main { max-width: 1120px; margin: 0 auto; padding: 24px; }
-      header, .panel-title-row, .session-actions, .history-controls { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+      header, .panel-title-row, .session-actions, .history-controls, .calibration-actions { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
       header { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
       h1 { font-size: 1.55rem; margin: 0; }
       h2 { font-size: 1rem; margin: 0 0 12px; }
@@ -40,6 +40,8 @@
       button.primary { background: var(--accent); border-color: var(--accent); color: white; }
       button.danger { border-color: color-mix(in srgb, var(--bad) 48%, transparent); color: var(--bad); }
       button:disabled { cursor: not-allowed; opacity: 0.55; }
+      .calibration-form { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) auto auto; gap: 10px; margin-top: 12px; }
+      .field { display: grid; gap: 4px; }
       .session-form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto; gap: 10px; margin-top: 12px; }
       .sessions-list { display: grid; gap: 8px; margin-top: 12px; }
       .session-row { align-items: center; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 10px; grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(90px, auto)) auto; padding: 10px; }
@@ -56,8 +58,8 @@
       .legend { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 0.85rem; gap: 12px; margin-top: 8px; }
       @media (max-width: 760px) {
         main { padding: 16px; }
-        header, .panel-title-row, .session-actions, .history-controls { align-items: flex-start; flex-direction: column; }
-        .session-form, .session-row { grid-template-columns: 1fr; }
+        header, .panel-title-row, .session-actions, .history-controls, .calibration-actions { align-items: flex-start; flex-direction: column; }
+        .calibration-form, .session-form, .session-row { grid-template-columns: 1fr; }
         svg, canvas { height: 260px; }
       }
     </style>
@@ -74,9 +76,9 @@
         <div class="tile"><div class="label">Messages recus</div><div id="messages" class="value">0</div></div>
         <div class="tile"><div class="label">Derniere mesure</div><div id="last-update" class="value">-</div></div>
         <div class="tile"><div class="label">Frequence dominante</div><div id="dominant-frequency" class="value">-</div></div>
-        <div class="tile"><div class="label">dB(A) estime</div><div id="weighted-a" class="value">-</div></div>
-        <div class="tile"><div class="label">dB(B) estime</div><div id="weighted-b" class="value">-</div></div>
-        <div class="tile"><div class="label">dB(C) estime</div><div id="weighted-c" class="value">-</div></div>
+        <div class="tile"><div class="label">dB(A) estime calibre</div><div id="weighted-a" class="value">-</div></div>
+        <div class="tile"><div class="label">dB(B) estime calibre</div><div id="weighted-b" class="value">-</div></div>
+        <div class="tile"><div class="label">dB(C) estime calibre</div><div id="weighted-c" class="value">-</div></div>
         <div class="tile"><div class="label">Ecart C-A</div><div id="weighted-ca" class="value">-</div></div>
         <div class="tile"><div class="label">Lecture grave</div><div id="bass-reading" class="value">-</div></div>
         <div class="tile"><div class="label">Session active</div><div id="active-session" class="value">-</div></div>
@@ -85,12 +87,36 @@
       </section>
 
       <section class="panel">
+        <div class="calibration-actions">
+          <h2>Calibration sonometre</h2>
+          <span id="calibration-summary" class="label">Correction : 0.0 dB</span>
+        </div>
+        <div class="calibration-form">
+          <label class="field label">Correction appliquee
+            <input id="calibration-offset" type="number" step="0.1" value="0" />
+          </label>
+          <label class="field label">Lecture sonometre dB(C)
+            <input id="calibration-reference" type="number" step="0.1" placeholder="Ex. 50.0" />
+          </label>
+          <label class="field label">dB(C) actuel non calibre
+            <input id="calibration-current" readonly value="-" />
+          </label>
+          <button id="calibration-apply" class="primary">Appliquer</button>
+          <button id="calibration-match">Caler</button>
+        </div>
+        <div class="legend">
+          <span>La correction est ajoutee aux dB(A/B/C) et conservee dans ce navigateur.</span>
+          <span>L'ecart C-A ne change pas, car la meme correction s'applique aux deux courbes.</span>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Spectre 20-250 Hz</h2>
         <svg id="chart" role="img" aria-label="Spectre des basses frequences"></svg>
         <div class="legend">
           <span>Ligne bleue : intensite relative par frequence</span>
           <span>Ligne orange : frequence dominante</span>
-          <span>dB(A/B/C) : estimation relative non calibree</span>
+          <span>dB(A/B/C) : estimation relative calibree par decalage</span>
         </div>
       </section>
 
@@ -152,6 +178,12 @@
       const weightedCEl = document.getElementById("weighted-c");
       const weightedCaEl = document.getElementById("weighted-ca");
       const bassReadingEl = document.getElementById("bass-reading");
+      const calibrationSummaryEl = document.getElementById("calibration-summary");
+      const calibrationOffsetEl = document.getElementById("calibration-offset");
+      const calibrationReferenceEl = document.getElementById("calibration-reference");
+      const calibrationCurrentEl = document.getElementById("calibration-current");
+      const calibrationApplyEl = document.getElementById("calibration-apply");
+      const calibrationMatchEl = document.getElementById("calibration-match");
       const activeSessionEl = document.getElementById("active-session");
       const nuisanceScoreEl = document.getElementById("nuisance-score");
       const bestMatchEl = document.getElementById("best-match");
@@ -167,6 +199,9 @@
       const startSessionEl = document.getElementById("start-session");
       const stopSessionEl = document.getElementById("stop-session");
       const sessionsListEl = document.getElementById("sessions-list");
+      const calibrationStorageKey = "ha_acoustic_observatory_db_offset";
+      let dbCalibrationOffset = Number(localStorage.getItem(calibrationStorageKey) || 0);
+      let lastRawWeightedLevels = null;
       let activeSessionId = null;
 
       function formatTime(timestamp) {
@@ -290,8 +325,38 @@
         };
       }
 
-      function updateWeightedReadings(points) {
+      function calibratedWeightedMetrics(points) {
         const levels = weightedMetrics(points);
+        return {
+          a: levels.a === null ? null : levels.a + dbCalibrationOffset,
+          b: levels.b === null ? null : levels.b + dbCalibrationOffset,
+          c: levels.c === null ? null : levels.c + dbCalibrationOffset,
+          ca: levels.ca,
+          raw: levels,
+        };
+      }
+
+      function updateCalibrationControls() {
+        if (document.activeElement !== calibrationOffsetEl) {
+          calibrationOffsetEl.value = dbCalibrationOffset.toFixed(1);
+        }
+        calibrationSummaryEl.textContent = `Correction : ${dbCalibrationOffset >= 0 ? "+" : ""}${dbCalibrationOffset.toFixed(1)} dB`;
+        calibrationCurrentEl.value = lastRawWeightedLevels?.c === null || lastRawWeightedLevels?.c === undefined ? "-" : `${lastRawWeightedLevels.c.toFixed(1)} dB(C)`;
+      }
+
+      function setCalibrationOffset(value) {
+        const nextValue = Number(value);
+        if (!Number.isFinite(nextValue)) return;
+        dbCalibrationOffset = nextValue;
+        localStorage.setItem(calibrationStorageKey, String(dbCalibrationOffset));
+        updateCalibrationControls();
+        refresh();
+      }
+
+      function updateWeightedReadings(points) {
+        const levels = calibratedWeightedMetrics(points);
+        lastRawWeightedLevels = levels.raw;
+        updateCalibrationControls();
         weightedAEl.textContent = levels.a === null ? "-" : `${levels.a.toFixed(1)} dB(A)`;
         weightedBEl.textContent = levels.b === null ? "-" : `${levels.b.toFixed(1)} dB(B)`;
         weightedCEl.textContent = levels.c === null ? "-" : `${levels.c.toFixed(1)} dB(C)`;
@@ -360,7 +425,7 @@
       }
 
       function historyValue(item, mode) {
-        const levels = weightedMetrics(item.points || []);
+        const levels = calibratedWeightedMetrics(item.points || []);
         return levels[mode];
       }
 
@@ -370,7 +435,7 @@
         const labels = { a: "dB(A)", b: "dB(B)", c: "dB(C)", ca: "Ecart C-A" };
         const values = items.map((item) => ({ captured_at: item.captured_at, value: historyValue(item, mode) })).filter((item) => item.value !== null && Number.isFinite(item.value));
         historyCountEl.textContent = `${values.length} valeur${values.length > 1 ? "s" : ""}`;
-        historyModeLabelEl.textContent = `${labels[mode]} : estimation relative dans le temps`;
+        historyModeLabelEl.textContent = mode === "ca" ? `${labels[mode]} : ecart relatif dans le temps` : `${labels[mode]} : estimation calibree dans le temps`;
         if (!values.length) return drawEmptyHistory(context, dpr);
         const left = 54 * dpr;
         const right = 16 * dpr;
@@ -454,7 +519,7 @@
         if (!state.connected) { noticeEl.textContent = "Connexion au broker MQTT en cours."; return; }
         if (state.message_count === 0) { noticeEl.textContent = "MQTT est connecte. En attente du premier spectre publie par l'Atom Echo."; return; }
         if (state.stale) { noticeEl.textContent = `Dernier spectre recu il y a ${formatAge(state.age_seconds)}.`; return; }
-        noticeEl.textContent = "Spectre recu en temps reel. Les lectures dB(A/B/C) sont des estimations relatives non calibrees.";
+        noticeEl.textContent = "Spectre recu en temps reel. Les lectures dB(A/B/C) sont des estimations calibrees par decalage.";
       }
 
       function renderSessions(sessions) {
@@ -559,9 +624,19 @@
 
       startSessionEl.addEventListener("click", () => startSession().catch((error) => alert(error.message)));
       stopSessionEl.addEventListener("click", () => stopSession().catch((error) => alert(error.message)));
+      calibrationApplyEl.addEventListener("click", () => setCalibrationOffset(calibrationOffsetEl.value));
+      calibrationMatchEl.addEventListener("click", () => {
+        const reference = Number(calibrationReferenceEl.value);
+        if (!Number.isFinite(reference) || lastRawWeightedLevels?.c === null || lastRawWeightedLevels?.c === undefined) return;
+        setCalibrationOffset(reference - lastRawWeightedLevels.c);
+      });
+      calibrationOffsetEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") setCalibrationOffset(calibrationOffsetEl.value);
+      });
       historyWindowEl.addEventListener("change", refreshHistory);
       historyModeEl.addEventListener("change", refreshHistory);
       window.addEventListener("resize", refreshHistory);
+      updateCalibrationControls();
       refresh();
       setInterval(refresh, 3000);
     </script>

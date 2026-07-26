@@ -18,6 +18,18 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.7.0] - 2026-07-26
+
+### Added
+
+- Browser-side calibration offset for estimated dB(A), dB(B), and dB(C) readings.
+- Calibration controls to enter a manual dB correction or align the current estimated dB(C) reading with an external sound level meter.
+- Calibrated weighted history views using the configured offset.
+
+### Notes
+
+- The calibration is stored in the browser and applies a simple level offset. It improves trend readability but does not make the Atom Echo a certified sound level meter.
+
 ## [0.6.0] - 2026-07-26
 
 ### Added
