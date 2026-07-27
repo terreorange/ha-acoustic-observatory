@@ -34,11 +34,43 @@ DEFAULT_WEATHER_POLL_INTERVAL_SECONDS = 30
 DEFAULT_SPECTRUM_RETENTION_DAYS = 14
 DEFAULT_WEATHER_RETENTION_DAYS = 30
 DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS = 6
+DEFAULT_CORRELATION_WINDOW_HOURS = 48
+DEFAULT_CORRELATION_BUCKET_MINUTES = 10
+MIN_CORRELATION_POINTS = 8
+MAX_CORRELATION_BUCKETS = 2000
+PUBLISH_INTERVAL_SECONDS = 60
+DISCOVERY_PREFIX = "homeassistant"
+PUBLISH_PREFIX = "ha_acoustic_observatory"
+PUBLISHED_ENTITIES = (
+    {
+        "key": "low_band_level",
+        "name": "Niveau bande basse",
+        "unit": "idx",
+        "icon": "mdi:waveform",
+        "state_class": "measurement",
+    },
+    {
+        "key": "temperature_sensitivity",
+        "name": "Sensibilite thermique",
+        "unit": "idx/°C",
+        "icon": "mdi:thermometer-lines",
+        "state_class": "measurement",
+    },
+    {
+        "key": "temperature_correlation",
+        "name": "Correlation chaleur-bruit",
+        "unit": "%",
+        "icon": "mdi:chart-scatter-plot",
+        "state_class": "measurement",
+    },
+)
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 state_lock = threading.Lock()
 database_lock = threading.Lock()
 options_lock = threading.Lock()
+publish_lock = threading.Lock()
+publish_client = None
 
 state = {
     "connected": False,
@@ -53,6 +85,7 @@ state = {
         "windy": False,
         "speed_kmh": None,
         "gust_kmh": None,
+        "temperature_c": None,
         "last_update_at": None,
         "error": None,
     },
@@ -73,9 +106,13 @@ def default_options():
         "mqtt_topic": DEFAULT_TOPIC,
         "wind_speed_entity": "",
         "wind_gust_entity": "",
+        "outdoor_temperature_entity": "",
         "wind_speed_threshold_kmh": DEFAULT_WIND_SPEED_THRESHOLD_KMH,
         "wind_gust_threshold_kmh": DEFAULT_WIND_GUST_THRESHOLD_KMH,
         "weather_poll_interval_seconds": DEFAULT_WEATHER_POLL_INTERVAL_SECONDS,
+        "correlation_window_hours": DEFAULT_CORRELATION_WINDOW_HOURS,
+        "correlation_bucket_minutes": DEFAULT_CORRELATION_BUCKET_MINUTES,
+        "publish_ha_entities": True,
         "spectrum_retention_days": DEFAULT_SPECTRUM_RETENTION_DAYS,
         "weather_retention_days": DEFAULT_WEATHER_RETENTION_DAYS,
         "database_cleanup_interval_hours": DEFAULT_DATABASE_CLEANUP_INTERVAL_HOURS,
@@ -157,6 +194,23 @@ def speed_to_kmh(value, unit):
     return numeric
 
 
+def temperature_to_celsius(value, unit):
+    numeric = as_float(value)
+
+    if numeric is None:
+        return None
+
+    normalized_unit = str(unit or "°C").strip().lower()
+
+    if normalized_unit in {"°f", "f", "fahrenheit"}:
+        return (numeric - 32.0) / 1.8
+
+    if normalized_unit in {"k", "°k", "kelvin"}:
+        return numeric - 273.15
+
+    return numeric
+
+
 def home_assistant_state(entity_id):
     token = os.getenv("SUPERVISOR_TOKEN")
 
@@ -182,6 +236,17 @@ def read_speed_entity(entity_id):
     payload = home_assistant_state(entity)
     unit = payload.get("attributes", {}).get("unit_of_measurement")
     return speed_to_kmh(payload.get("state"), unit)
+
+
+def read_temperature_entity(entity_id):
+    entity = str(entity_id or "").strip()
+
+    if not entity:
+        return None
+
+    payload = home_assistant_state(entity)
+    unit = payload.get("attributes", {}).get("unit_of_measurement")
+    return temperature_to_celsius(payload.get("state"), unit)
 
 
 def environment_mqtt_settings():
@@ -290,6 +355,14 @@ def mqtt_error_message(prefix, result_code, source=None):
     return f"{prefix}: {result_code}"
 
 
+def ensure_column(connection, table, column, definition):
+    """Add a column to an existing database created by an older add-on version."""
+    existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+
+    if column not in existing:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -338,6 +411,7 @@ def init_database():
                     captured_at REAL NOT NULL,
                     wind_speed_kmh REAL,
                     wind_gust_kmh REAL,
+                    outdoor_temperature_c REAL,
                     windy INTEGER NOT NULL DEFAULT 0,
                     payload TEXT NOT NULL
                 )
@@ -348,6 +422,9 @@ def init_database():
                 CREATE INDEX IF NOT EXISTS idx_weather_samples_captured_at
                 ON weather_samples (captured_at)
                 """
+            )
+            ensure_column(
+                connection, "weather_samples", "outdoor_temperature_c", "REAL"
             )
 
 
@@ -438,14 +515,16 @@ def save_weather_sample(captured_at, sample):
                     captured_at,
                     wind_speed_kmh,
                     wind_gust_kmh,
+                    outdoor_temperature_c,
                     windy,
                     payload
-                ) VALUES (?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     captured_at,
                     sample.get("speed_kmh"),
                     sample.get("gust_kmh"),
+                    sample.get("temperature_c"),
                     1 if sample.get("windy") else 0,
                     json.dumps(sample, separators=(",", ":")),
                 ),
@@ -618,7 +697,8 @@ def load_weather_samples(minutes):
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                SELECT captured_at, wind_speed_kmh, wind_gust_kmh, windy, payload
+                SELECT captured_at, wind_speed_kmh, wind_gust_kmh,
+                       outdoor_temperature_c, windy, payload
                 FROM weather_samples
                 WHERE captured_at >= ?
                 ORDER BY captured_at ASC
@@ -632,10 +712,147 @@ def load_weather_samples(minutes):
             "captured_at": row["captured_at"],
             "wind_speed_kmh": row["wind_speed_kmh"],
             "wind_gust_kmh": row["wind_gust_kmh"],
+            "temperature_c": row["outdoor_temperature_c"],
             "windy": bool(row["windy"]),
         }
         for row in rows
     ]
+
+
+def linear_regression(pairs):
+    """Least-squares fit of level against temperature, with Pearson correlation."""
+    count = len(pairs)
+
+    if count < MIN_CORRELATION_POINTS:
+        return None
+
+    mean_temperature = sum(pair[0] for pair in pairs) / count
+    mean_level = sum(pair[1] for pair in pairs) / count
+
+    temperature_variance = sum(
+        (pair[0] - mean_temperature) ** 2 for pair in pairs
+    )
+    level_variance = sum((pair[1] - mean_level) ** 2 for pair in pairs)
+    covariance = sum(
+        (pair[0] - mean_temperature) * (pair[1] - mean_level) for pair in pairs
+    )
+
+    if temperature_variance <= 0 or level_variance <= 0:
+        return None
+
+    slope = covariance / temperature_variance
+    correlation = covariance / math.sqrt(temperature_variance * level_variance)
+
+    return {
+        "slope": slope,
+        "intercept": mean_level - slope * mean_temperature,
+        "correlation": correlation,
+        "r_squared": correlation * correlation,
+        "sample_count": count,
+        "mean_temperature_c": mean_temperature,
+        "mean_level": mean_level,
+        "min_temperature_c": min(pair[0] for pair in pairs),
+        "max_temperature_c": max(pair[0] for pair in pairs),
+    }
+
+
+def correlation_buckets(hours, bucket_minutes, exclude_windy):
+    """Average acoustic level and temperature over the same time buckets."""
+    since = time.time() - hours * 60 * 60
+    bucket_seconds = max(60, bucket_minutes * 60)
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            spectrum_rows = connection.execute(
+                """
+                SELECT CAST(captured_at / ? AS INTEGER) AS bucket,
+                       AVG(low_band_magnitude) AS level,
+                       AVG(dominant_frequency) AS dominant_frequency,
+                       COUNT(*) AS sample_count
+                FROM spectra
+                WHERE captured_at >= ?
+                GROUP BY bucket
+                ORDER BY bucket ASC
+                LIMIT ?
+                """,
+                (bucket_seconds, since, MAX_CORRELATION_BUCKETS),
+            ).fetchall()
+
+            weather_rows = connection.execute(
+                """
+                SELECT CAST(captured_at / ? AS INTEGER) AS bucket,
+                       AVG(outdoor_temperature_c) AS temperature_c,
+                       MAX(windy) AS windy
+                FROM weather_samples
+                WHERE captured_at >= ? AND outdoor_temperature_c IS NOT NULL
+                GROUP BY bucket
+                ORDER BY bucket ASC
+                LIMIT ?
+                """,
+                (bucket_seconds, since, MAX_CORRELATION_BUCKETS),
+            ).fetchall()
+
+    weather_by_bucket = {row["bucket"]: row for row in weather_rows}
+    points = []
+
+    for row in spectrum_rows:
+        weather = weather_by_bucket.get(row["bucket"])
+
+        if not weather or weather["temperature_c"] is None:
+            continue
+
+        windy = bool(weather["windy"])
+
+        if exclude_windy and windy:
+            continue
+
+        points.append(
+            {
+                "captured_at": row["bucket"] * bucket_seconds,
+                "temperature_c": weather["temperature_c"],
+                "level": row["level"],
+                "dominant_frequency": row["dominant_frequency"],
+                "sample_count": row["sample_count"],
+                "windy": windy,
+            }
+        )
+
+    return points
+
+
+def build_correlation(hours, bucket_minutes, exclude_windy):
+    points = correlation_buckets(hours, bucket_minutes, exclude_windy)
+    regression = linear_regression(
+        [(point["temperature_c"], point["level"]) for point in points]
+    )
+
+    return {
+        "hours": hours,
+        "bucket_minutes": bucket_minutes,
+        "exclude_windy": exclude_windy,
+        "count": len(points),
+        "min_points": MIN_CORRELATION_POINTS,
+        "points": points,
+        "regression": regression,
+    }
+
+
+def correlation_settings(options):
+    hours = bounded_int(
+        options.get("correlation_window_hours"),
+        DEFAULT_CORRELATION_WINDOW_HOURS,
+        1,
+        720,
+    )
+    bucket_minutes = bounded_int(
+        options.get("correlation_bucket_minutes"),
+        DEFAULT_CORRELATION_BUCKET_MINUTES,
+        1,
+        120,
+    )
+
+    return hours, bucket_minutes
 
 
 def weather_periods_from_samples(samples):
@@ -852,6 +1069,9 @@ def on_connect(client, userdata, flags, result_code):
             state["error"] = None
             topic = state["topic"]
         client.subscribe(topic)
+
+        if as_bool(current_options().get("publish_ha_entities", True)):
+            publish_discovery(client)
     else:
         error = mqtt_error_message("MQTT connect failed", result_code)
         with state_lock:
@@ -897,7 +1117,88 @@ def on_message(client, userdata, message):
         state["error"] = None
 
 
+def publish_discovery(client):
+    """Expose the temperature indicators as Home Assistant entities."""
+    device = {
+        "identifiers": [PUBLISH_PREFIX],
+        "name": "Acoustic Observatory",
+        "manufacturer": "HA Acoustic Observatory",
+        "model": "Add-on",
+    }
+
+    for entity in PUBLISHED_ENTITIES:
+        key = entity["key"]
+        payload = {
+            "name": entity["name"],
+            "unique_id": f"{PUBLISH_PREFIX}_{key}",
+            "state_topic": f"{PUBLISH_PREFIX}/{key}/state",
+            "unit_of_measurement": entity["unit"],
+            "state_class": entity["state_class"],
+            "icon": entity["icon"],
+            "availability_topic": f"{PUBLISH_PREFIX}/status",
+            "device": device,
+        }
+        client.publish(
+            f"{DISCOVERY_PREFIX}/sensor/{PUBLISH_PREFIX}/{key}/config",
+            json.dumps(payload, separators=(",", ":")),
+            retain=True,
+        )
+
+    client.publish(f"{PUBLISH_PREFIX}/status", "online", retain=True)
+
+
+def publish_entity_states():
+    with publish_lock:
+        client = publish_client
+
+    if client is None:
+        return
+
+    options = current_options()
+
+    if not as_bool(options.get("publish_ha_entities", True)):
+        return
+
+    hours, bucket_minutes = correlation_settings(options)
+    correlation = build_correlation(hours, bucket_minutes, exclude_windy=True)
+    regression = correlation["regression"]
+
+    with state_lock:
+        last_spectrum = state["last_spectrum"]
+
+    summary = summarize_spectrum(last_spectrum)
+    values = {
+        "low_band_level": round(summary["low_band_magnitude"], 2),
+        "temperature_sensitivity": (
+            round(regression["slope"], 3) if regression else None
+        ),
+        "temperature_correlation": (
+            round(100.0 * regression["correlation"], 1) if regression else None
+        ),
+    }
+
+    for key, value in values.items():
+        client.publish(
+            f"{PUBLISH_PREFIX}/{key}/state",
+            "unknown" if value is None else str(value),
+            retain=True,
+        )
+
+
+def publish_worker():
+    while True:
+        try:
+            publish_entity_states()
+        except Exception as exc:  # pragma: no cover - runtime diagnostics
+            with state_lock:
+                state["error"] = f"Could not publish Home Assistant entities: {exc}"
+
+        time.sleep(PUBLISH_INTERVAL_SECONDS)
+
+
 def mqtt_worker():
+    global publish_client
+
     options = load_options()
     with state_lock:
         state["topic"] = options.get("mqtt_topic", DEFAULT_TOPIC)
@@ -908,6 +1209,7 @@ def mqtt_worker():
             state["mqtt_source"] = settings.get("source", "fallback")
 
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+        client.will_set(f"{PUBLISH_PREFIX}/status", "offline", retain=True)
 
         if settings["username"] and settings["password"]:
             client.username_pw_set(settings["username"], settings["password"])
@@ -918,6 +1220,9 @@ def mqtt_worker():
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect
         client.on_message = on_message
+
+        with publish_lock:
+            publish_client = client
 
         try:
             client.connect(settings["host"], settings["port"], keepalive=60)
@@ -934,7 +1239,10 @@ def weather_worker():
         options = current_options()
         speed_entity = str(options.get("wind_speed_entity") or "").strip()
         gust_entity = str(options.get("wind_gust_entity") or "").strip()
-        configured = bool(speed_entity or gust_entity)
+        temperature_entity = str(
+            options.get("outdoor_temperature_entity") or ""
+        ).strip()
+        configured = bool(speed_entity or gust_entity or temperature_entity)
 
         speed_threshold = as_float(options.get("wind_speed_threshold_kmh"))
         gust_threshold = as_float(options.get("wind_gust_threshold_kmh"))
@@ -955,10 +1263,13 @@ def weather_worker():
             "configured": configured,
             "speed_entity": speed_entity,
             "gust_entity": gust_entity,
+            "temperature_entity": temperature_entity,
+            "temperature_configured": bool(temperature_entity),
             "speed_threshold_kmh": speed_threshold,
             "gust_threshold_kmh": gust_threshold,
             "speed_kmh": None,
             "gust_kmh": None,
+            "temperature_c": None,
             "windy": False,
             "last_update_at": time.time(),
             "error": None,
@@ -968,6 +1279,7 @@ def weather_worker():
             try:
                 sample["speed_kmh"] = read_speed_entity(speed_entity)
                 sample["gust_kmh"] = read_speed_entity(gust_entity)
+                sample["temperature_c"] = read_temperature_entity(temperature_entity)
                 sample["windy"] = (
                     (
                         sample["speed_kmh"] is not None
@@ -980,7 +1292,7 @@ def weather_worker():
                 )
                 save_weather_sample(sample["last_update_at"], sample)
             except Exception as exc:  # pragma: no cover - runtime diagnostics
-                sample["error"] = f"Could not read wind entities: {exc}"
+                sample["error"] = f"Could not read weather entities: {exc}"
 
         with state_lock:
             state["weather"] = sample
@@ -1073,6 +1385,25 @@ def api_history():
             "wind_periods": weather_periods_from_samples(weather_samples),
         }
     )
+
+
+@app.get("/api/correlation")
+def api_correlation():
+    options = current_options()
+    default_hours, default_bucket_minutes = correlation_settings(options)
+
+    hours = bounded_int(request.args.get("hours"), default_hours, 1, 720)
+    bucket_minutes = bounded_int(
+        request.args.get("bucket_minutes"), default_bucket_minutes, 1, 120
+    )
+    exclude_windy = as_bool(request.args.get("exclude_windy", "true"))
+
+    payload = build_correlation(hours, bucket_minutes, exclude_windy)
+    payload["temperature_configured"] = bool(
+        str(options.get("outdoor_temperature_entity") or "").strip()
+    )
+
+    return jsonify(payload)
 
 
 @app.get("/api/sessions")
@@ -1184,4 +1515,5 @@ if __name__ == "__main__":
     threading.Thread(target=mqtt_worker, daemon=True).start()
     threading.Thread(target=weather_worker, daemon=True).start()
     threading.Thread(target=cleanup_worker, daemon=True).start()
+    threading.Thread(target=publish_worker, daemon=True).start()
     app.run(host="0.0.0.0", port=8099)

@@ -48,6 +48,21 @@ Example payload:
 
 The spectrum values are relative FFT magnitudes. They are useful for comparison and visualization, but they are not calibrated acoustic units.
 
+## Topics Published by the Add-on
+
+The add-on publishes its own indicators under `ha_acoustic_observatory/` and announces them through Home Assistant MQTT discovery under `homeassistant/sensor/ha_acoustic_observatory/`. Set `publish_ha_entities` to `false` to disable this.
+
+| Topic | Meaning | Unit |
+| --- | --- | --- |
+| `ha_acoustic_observatory/status` | Add-on availability (`online` / `offline`) | - |
+| `ha_acoustic_observatory/low_band_level/state` | Mean 40-250 Hz magnitude of the latest spectrum | `idx` |
+| `ha_acoustic_observatory/temperature_sensitivity/state` | Regression slope of level against outdoor temperature | `idx/°C` |
+| `ha_acoustic_observatory/temperature_correlation/state` | Pearson correlation between level and temperature | `%` |
+
+The two temperature indicators require `outdoor_temperature_entity` to be configured. They are recomputed every 60 seconds over the `correlation_window_hours` window, always excluding windy periods. When there are fewer than 8 paired buckets, the sensors publish `unknown`.
+
+These values are relative indicators derived from uncalibrated FFT magnitudes. They are meant for trend analysis, not for regulatory acoustic measurement.
+
 ## Compatibility Notes
 
 - Topic names should be treated as stable once a public release is tagged.

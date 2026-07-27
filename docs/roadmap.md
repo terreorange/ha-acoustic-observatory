@@ -30,6 +30,13 @@
 - Add data retention settings.
 - Add simple calibration helpers for 0-100 indices.
 
+## v0.10 - Heat Correlation
+
+- Read an outdoor temperature entity and store it with each weather sample.
+- Correlate low-band level against outdoor temperature over shared time buckets.
+- Plot the relationship with a trend line, excluding windy periods.
+- Publish level, thermal sensitivity, and correlation as Home Assistant sensors.
+
 ## v0.5 - Detection
 
 - Create a hum detection score.

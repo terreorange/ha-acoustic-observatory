@@ -18,6 +18,23 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.10.0] - 2026-07-27
+
+### Added
+
+- Optional Home Assistant outdoor-temperature entity configuration.
+- Storage of outdoor temperature alongside each weather sample.
+- `GET /api/correlation` endpoint pairing acoustic level and temperature over shared time buckets, with least-squares slope and Pearson correlation.
+- "Chaleur et bruit" panel plotting outdoor temperature against low-band level, with a trend line and a plain-language verdict.
+- Outdoor temperature, thermal sensitivity, and heat-noise correlation tiles.
+- Home Assistant MQTT discovery for three add-on sensors: low-band level, thermal sensitivity, and heat-noise correlation.
+
+### Notes
+
+- The correlation analysis excludes windy buckets by default, since wind inflates the low-frequency level and weakens the fit.
+- Thermal sensitivity is expressed in index points per degree Celsius. It is a relative trend indicator, not a calibrated acoustic measurement.
+- Existing databases are migrated in place by adding the `outdoor_temperature_c` column.
+
 ## [0.9.0] - 2026-07-26
 
 ### Added

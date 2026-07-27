@@ -56,6 +56,9 @@
       .spectrum-line { fill: none; stroke: var(--accent); stroke-linejoin: round; stroke-width: 2; }
       .dominant-line { stroke: var(--warn); stroke-dasharray: 4 4; stroke-width: 2; }
       .legend { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 0.85rem; gap: 12px; margin-top: 8px; }
+      .legend .verdict { color: CanvasText; }
+      label.check { align-items: center; display: inline-flex; flex-direction: row; gap: 6px; }
+      label.check input { min-height: 0; }
       @media (max-width: 760px) {
         main { padding: 16px; }
         header, .panel-title-row, .session-actions, .history-controls, .calibration-actions { align-items: flex-start; flex-direction: column; }
@@ -84,6 +87,9 @@
         <div class="tile"><div class="label">Score nuisance</div><div id="nuisance-score" class="value">-</div></div>
         <div class="tile"><div class="label">Signature proche</div><div id="best-match" class="value">-</div></div>
         <div class="tile"><div class="label">Vent automatique</div><div id="wind-state" class="value">-</div></div>
+        <div class="tile"><div class="label">Temperature exterieure</div><div id="outdoor-temperature" class="value">-</div></div>
+        <div class="tile"><div class="label">Sensibilite thermique</div><div id="thermal-sensitivity" class="value">-</div></div>
+        <div class="tile"><div class="label">Correlation chaleur-bruit</div><div id="thermal-correlation" class="value">-</div></div>
       </section>
 
       <section class="panel">
@@ -151,6 +157,35 @@
       </section>
 
       <section class="panel">
+        <div class="panel-title-row">
+          <h2>Chaleur et bruit</h2>
+          <div class="history-controls">
+            <label class="label">Fenetre
+              <select id="correlation-window">
+                <option value="24">24 h</option>
+                <option value="48" selected>48 h</option>
+                <option value="168">7 jours</option>
+                <option value="336">14 jours</option>
+              </select>
+            </label>
+            <label class="label check">
+              <input id="correlation-exclude-wind" type="checkbox" checked />
+              Exclure les periodes de vent
+            </label>
+          </div>
+        </div>
+        <canvas id="scatter" aria-label="Correlation entre temperature exterieure et niveau grave"></canvas>
+        <div class="legend">
+          <span id="correlation-verdict">En attente de donnees de temperature.</span>
+        </div>
+        <div class="legend">
+          <span>Chaque point : moyenne du niveau grave sur un intervalle</span>
+          <span>Ligne orange : tendance</span>
+          <span id="correlation-count">0 point</span>
+        </div>
+      </section>
+
+      <section class="panel">
         <div class="session-actions">
           <h2>Campagnes de mesure</h2>
           <button id="stop-session" class="danger" disabled>Arreter la session</button>
@@ -187,6 +222,14 @@
       const nuisanceScoreEl = document.getElementById("nuisance-score");
       const bestMatchEl = document.getElementById("best-match");
       const windStateEl = document.getElementById("wind-state");
+      const outdoorTemperatureEl = document.getElementById("outdoor-temperature");
+      const thermalSensitivityEl = document.getElementById("thermal-sensitivity");
+      const thermalCorrelationEl = document.getElementById("thermal-correlation");
+      const scatterEl = document.getElementById("scatter");
+      const correlationWindowEl = document.getElementById("correlation-window");
+      const correlationExcludeWindEl = document.getElementById("correlation-exclude-wind");
+      const correlationVerdictEl = document.getElementById("correlation-verdict");
+      const correlationCountEl = document.getElementById("correlation-count");
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
       const waterfallEl = document.getElementById("waterfall");
@@ -370,14 +413,14 @@
         return `hsl(${hue}, 78%, ${lightness}%)`;
       }
 
-      function prepareCanvas() {
-        const rect = waterfallEl.getBoundingClientRect();
+      function prepareCanvas(element) {
+        const rect = element.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         const width = Math.max(1, Math.round(rect.width * dpr));
         const height = Math.max(1, Math.round(rect.height * dpr));
-        const context = waterfallEl.getContext("2d");
-        waterfallEl.width = width;
-        waterfallEl.height = height;
+        const context = element.getContext("2d");
+        element.width = width;
+        element.height = height;
         context.clearRect(0, 0, width, height);
         context.fillStyle = getComputedStyle(document.body).backgroundColor;
         context.fillRect(0, 0, width, height);
@@ -415,7 +458,7 @@
       }
 
       function drawWaterfall(items, windPeriods = []) {
-        const { context, width, height, dpr } = prepareCanvas();
+        const { context, width, height, dpr } = prepareCanvas(waterfallEl);
         historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
         historyModeLabelEl.textContent = "Spectre : temps de haut en bas, couleur claire = intensite plus forte";
         if (!items.length) return drawEmptyHistory(context, dpr);
@@ -452,7 +495,7 @@
       }
 
       function drawWeightedHistory(items, windPeriods = []) {
-        const { context, width, height, dpr } = prepareCanvas();
+        const { context, width, height, dpr } = prepareCanvas(waterfallEl);
         const mode = historyModeEl.value;
         const labels = { a: "dB(A)", c: "dB(C)", ca: "Ecart C-A" };
         const values = items.map((item) => ({ captured_at: item.captured_at, value: historyValue(item, mode) })).filter((item) => item.value !== null && Number.isFinite(item.value));
@@ -518,6 +561,102 @@
         else drawWeightedHistory(items, windPeriods);
       }
 
+      function cssVariable(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+
+      function correlationVerdict(payload) {
+        const regression = payload.regression;
+        if (!regression) {
+          if (!payload.temperature_configured) return "Renseignez outdoor_temperature_entity dans la configuration de l'add-on pour activer cette analyse.";
+          return `Pas encore assez de points couples (${payload.count} sur ${payload.min_points} requis).`;
+        }
+        const r = regression.correlation;
+        const magnitude = Math.abs(r);
+        const strength = magnitude >= 0.8 ? "tres forte" : magnitude >= 0.6 ? "forte" : magnitude >= 0.4 ? "moderee" : "faible";
+        const direction = r >= 0 ? "monte" : "descend";
+        const span = regression.max_temperature_c - regression.min_temperature_c;
+        const swing = Math.abs(regression.slope) * span;
+        return `Le niveau grave ${direction} de ${Math.abs(regression.slope).toFixed(2)} point par degre, soit ${swing.toFixed(0)} points entre ${regression.min_temperature_c.toFixed(1)} et ${regression.max_temperature_c.toFixed(1)} C. Correlation ${strength} (r = ${r.toFixed(2)}, r2 = ${(regression.r_squared * 100).toFixed(0)} %).`;
+      }
+
+      function drawScatter(payload) {
+        const { context, width, height, dpr } = prepareCanvas(scatterEl);
+        const points = payload.points || [];
+        const regression = payload.regression;
+        correlationCountEl.textContent = `${points.length} point${points.length > 1 ? "s" : ""}`;
+        correlationVerdictEl.textContent = correlationVerdict(payload);
+        correlationVerdictEl.className = regression ? "verdict" : "";
+        thermalSensitivityEl.textContent = regression ? `${regression.slope >= 0 ? "+" : ""}${regression.slope.toFixed(2)} /C` : "-";
+        thermalCorrelationEl.textContent = regression ? `${(regression.correlation * 100).toFixed(0)} %` : "-";
+        thermalCorrelationEl.title = regression ? `${regression.sample_count} intervalles analyses` : "Analyse indisponible";
+        if (!points.length) return drawEmptyHistory(context, dpr);
+
+        const left = 56 * dpr;
+        const right = 16 * dpr;
+        const top = 16 * dpr;
+        const bottom = 34 * dpr;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const temperatures = points.map((point) => point.temperature_c);
+        const levels = points.map((point) => point.level);
+        const minTemperature = Math.min(...temperatures);
+        const maxTemperature = Math.max(...temperatures);
+        const minLevel = Math.min(...levels);
+        const maxLevel = Math.max(...levels);
+        const temperatureSpan = Math.max(0.5, maxTemperature - minTemperature);
+        const levelSpan = Math.max(0.5, maxLevel - minLevel);
+        const x = (temperature) => left + ((temperature - minTemperature) / temperatureSpan) * plotWidth;
+        const y = (level) => top + plotHeight - ((level - minLevel) / levelSpan) * plotHeight;
+
+        context.strokeStyle = cssVariable("--border");
+        context.lineWidth = dpr;
+        for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+          const yy = top + plotHeight - ratio * plotHeight;
+          context.beginPath();
+          context.moveTo(left, yy);
+          context.lineTo(left + plotWidth, yy);
+          context.stroke();
+        }
+
+        const accent = cssVariable("--accent");
+        for (const point of points) {
+          context.fillStyle = point.windy ? "rgba(0, 151, 167, 0.35)" : accent;
+          context.beginPath();
+          context.arc(x(point.temperature_c), y(point.level), 2.6 * dpr, 0, Math.PI * 2);
+          context.fill();
+        }
+
+        if (regression) {
+          context.save();
+          context.beginPath();
+          context.rect(left, top, plotWidth, plotHeight);
+          context.clip();
+          context.strokeStyle = cssVariable("--warn");
+          context.lineWidth = 2 * dpr;
+          context.beginPath();
+          context.moveTo(x(minTemperature), y(regression.intercept + regression.slope * minTemperature));
+          context.lineTo(x(maxTemperature), y(regression.intercept + regression.slope * maxTemperature));
+          context.stroke();
+          context.restore();
+        }
+
+        context.strokeStyle = cssVariable("--border");
+        context.lineWidth = dpr;
+        context.strokeRect(left, top, plotWidth, plotHeight);
+        context.fillStyle = cssVariable("--muted");
+        context.font = `${11 * dpr}px system-ui, sans-serif`;
+        context.textAlign = "right";
+        context.fillText(maxLevel.toFixed(0), left - 8 * dpr, top + 10 * dpr);
+        context.fillText(minLevel.toFixed(0), left - 8 * dpr, top + plotHeight);
+        context.textAlign = "center";
+        for (const ratio of [0, 0.5, 1]) {
+          const temperature = minTemperature + ratio * (maxTemperature - minTemperature);
+          context.fillText(`${temperature.toFixed(1)} C`, x(temperature), height - 12 * dpr);
+        }
+        context.fillText("Temperature exterieure", left + plotWidth / 2, height - 1 * dpr);
+      }
+
       function updateSignature(state) {
         const signature = state.signature || {};
         const nuisanceScore = signature.nuisance_score;
@@ -534,6 +673,22 @@
         activeSessionEl.textContent = session ? session.label : "-";
         startSessionEl.disabled = Boolean(session);
         stopSessionEl.disabled = !session;
+      }
+
+      function updateTemperatureState(state) {
+        const weather = state.weather || {};
+        if (!weather.temperature_configured) {
+          outdoorTemperatureEl.textContent = "Non configure";
+          outdoorTemperatureEl.title = "Renseignez outdoor_temperature_entity dans la configuration de l'add-on.";
+          return;
+        }
+        if (weather.temperature_c === null || weather.temperature_c === undefined) {
+          outdoorTemperatureEl.textContent = "-";
+          outdoorTemperatureEl.title = weather.error || "Entite temperature illisible.";
+          return;
+        }
+        outdoorTemperatureEl.textContent = `${weather.temperature_c.toFixed(1)} C`;
+        outdoorTemperatureEl.title = `Source : ${weather.temperature_entity || "-"}`;
       }
 
       function updateWindState(state) {
@@ -611,6 +766,7 @@
         updateNotice(state);
         updateSessionState(state);
         updateWindState(state);
+        updateTemperatureState(state);
         updateSignature(state);
         updateWeightedReadings(points);
         topicEl.textContent = state.topic || "-";
@@ -624,6 +780,18 @@
         const response = await fetch(`api/history?minutes=${historyWindowEl.value}`);
         const history = await response.json();
         drawHistory(history.items || [], history.wind_periods || []);
+      }
+
+      async function refreshCorrelation() {
+        try {
+          const hours = correlationWindowEl.value;
+          const excludeWindy = correlationExcludeWindEl.checked;
+          const response = await fetch(`api/correlation?hours=${hours}&exclude_windy=${excludeWindy}`);
+          drawScatter(await response.json());
+        } catch (error) {
+          correlationVerdictEl.className = "";
+          correlationVerdictEl.textContent = `Analyse indisponible : ${error}`;
+        }
       }
 
       async function refreshSessions() {
@@ -685,10 +853,18 @@
       });
       historyWindowEl.addEventListener("change", refreshHistory);
       historyModeEl.addEventListener("change", refreshHistory);
-      window.addEventListener("resize", refreshHistory);
+      correlationWindowEl.addEventListener("change", refreshCorrelation);
+      correlationExcludeWindEl.addEventListener("change", refreshCorrelation);
+      window.addEventListener("resize", () => {
+        refreshHistory();
+        refreshCorrelation();
+      });
       updateCalibrationControls();
       refresh();
+      refreshCorrelation();
       setInterval(refresh, 3000);
+      // The correlation window spans days, so it does not need the 3 s cadence.
+      setInterval(refreshCorrelation, 30000);
     </script>
   </body>
 </html>
