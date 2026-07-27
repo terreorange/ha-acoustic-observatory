@@ -18,6 +18,23 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.12.0] - 2026-07-27
+
+### Fixed
+
+- The database lived in `/data`, which Home Assistant destroys when an add-on is uninstalled. Keeping the add-on data at uninstall did not protect it, because that option covers the mapped `addon_config` directory, which this add-on declared but never used. The database now lives in that mapped directory and survives an uninstall and reinstall.
+
+### Added
+
+- Automatic one-time migration of a database left in `/data` by an earlier version. The copy is verified to hold the same number of spectra before the original is removed; a failed migration leaves the original untouched and is reported in the interface.
+- `GET /api/database/export` streaming a consistent snapshot of the database.
+- "Base de donnees" panel showing where the database is stored, whether it survives a reinstall, the retention in force, the last cleanup, and an export link.
+
+### Notes
+
+- If the mapped configuration directory is unavailable, the add-on keeps using `/data` and says so in the interface rather than failing to start.
+- The stored location is now reachable from File Editor or Samba under `addon_configs/`, so the database can be copied without a terminal.
+
 ## [0.11.0] - 2026-07-27
 
 ### Added

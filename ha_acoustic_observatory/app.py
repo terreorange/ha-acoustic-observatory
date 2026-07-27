@@ -4,6 +4,7 @@ import json
 import math
 import os
 import sqlite3
+import tempfile
 import threading
 import time
 import urllib.error
@@ -17,8 +18,13 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR / "web"
 DATA_DIR = Path("/data")
+CONFIG_DIR = Path("/config")
 OPTIONS_PATH = DATA_DIR / "options.json"
-DATABASE_PATH = DATA_DIR / "acoustic_observatory.sqlite3"
+DATABASE_NAME = "acoustic_observatory.sqlite3"
+LEGACY_DATABASE_PATH = DATA_DIR / DATABASE_NAME
+# Resolved at startup by setup_storage(), which prefers the mapped config
+# directory because /data does not survive an uninstall.
+DATABASE_PATH = LEGACY_DATABASE_PATH
 
 DEFAULT_TOPIC = "atom_echo_noise/spectrum/state"
 STALE_AFTER_SECONDS = 30
@@ -103,6 +109,10 @@ state = {
         "weather_retention_days": DEFAULT_WEATHER_RETENTION_DAYS,
         "deleted_spectra": 0,
         "deleted_weather_samples": 0,
+        "database_path": str(LEGACY_DATABASE_PATH),
+        "database_persistent": False,
+        "migrated_spectra": None,
+        "migration_error": None,
         "error": None,
     },
 }
@@ -379,8 +389,77 @@ def ensure_column(connection, table, column, definition):
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def resolve_database_path():
+    """Pick where the database lives, preferring the mapped add-on config directory.
+
+    Home Assistant destroys /data when an add-on is uninstalled, so a database
+    kept there is lost on reinstall even when the uninstall dialog offers to keep
+    the add-on data. The directory mapped through `addon_config` survives, and is
+    reachable from File Editor or Samba for a manual copy.
+    """
+    if CONFIG_DIR.is_dir() and os.access(CONFIG_DIR, os.W_OK):
+        return CONFIG_DIR / DATABASE_NAME
+
+    return LEGACY_DATABASE_PATH
+
+
+def spectra_row_count(path):
+    with sqlite3.connect(path) as connection:
+        return connection.execute("SELECT COUNT(*) FROM spectra").fetchone()[0]
+
+
+def migrate_legacy_database(target):
+    """Move a database left in /data by an earlier version to its durable home.
+
+    Returns (migrated_rows, error). The source is removed only once the copy has
+    been verified to hold the same number of spectra.
+    """
+    if target == LEGACY_DATABASE_PATH or target.exists():
+        return None, None
+
+    if not LEGACY_DATABASE_PATH.exists():
+        return None, None
+
+    try:
+        with sqlite3.connect(LEGACY_DATABASE_PATH) as source:
+            with sqlite3.connect(target) as destination:
+                source.backup(destination)
+
+        copied = spectra_row_count(target)
+        original = spectra_row_count(LEGACY_DATABASE_PATH)
+
+        if copied != original:
+            raise sqlite3.DatabaseError(f"copied {copied} of {original} spectra")
+    except (sqlite3.Error, OSError) as exc:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        return None, f"Could not move the database out of /data: {exc}"
+
+    LEGACY_DATABASE_PATH.unlink(missing_ok=True)
+    return copied, None
+
+
+def setup_storage():
+    global DATABASE_PATH
+
+    DATABASE_PATH = resolve_database_path()
+    migrated, error = migrate_legacy_database(DATABASE_PATH)
+
+    with state_lock:
+        state["storage"]["database_path"] = str(DATABASE_PATH)
+        state["storage"]["database_persistent"] = DATABASE_PATH != LEGACY_DATABASE_PATH
+        state["storage"]["migrated_spectra"] = migrated
+        # Kept separate from "error", which the recurring cleanup resets.
+        state["storage"]["migration_error"] = error
+
+    init_database()
+
+
 def init_database():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with database_lock:
         with sqlite3.connect(DATABASE_PATH) as connection:
@@ -594,7 +673,11 @@ def cleanup_database():
         168,
     )
 
+    with state_lock:
+        previous = dict(state["storage"])
+
     cleanup_state = {
+        **previous,
         "last_cleanup_at": now,
         "next_cleanup_at": now + interval_hours * 60 * 60,
         "spectrum_retention_days": spectrum_retention_days,
@@ -1904,8 +1987,49 @@ def api_export_session(session_id):
     )
 
 
+@app.get("/api/database/export")
+def api_export_database():
+    """Stream a consistent snapshot of the database, so a copy can be kept off-box."""
+    descriptor, name = tempfile.mkstemp(
+        prefix=".export-", suffix=".sqlite3", dir=str(DATABASE_PATH.parent)
+    )
+    os.close(descriptor)
+    snapshot = Path(name)
+
+    try:
+        with database_lock:
+            with sqlite3.connect(DATABASE_PATH) as source:
+                with sqlite3.connect(snapshot) as destination:
+                    source.backup(destination)
+    except (sqlite3.Error, OSError) as exc:
+        snapshot.unlink(missing_ok=True)
+        return jsonify({"error": f"Could not export the database: {exc}"}), 500
+
+    def stream():
+        try:
+            with snapshot.open("rb") as handle:
+                while True:
+                    chunk = handle.read(256 * 1024)
+
+                    if not chunk:
+                        break
+
+                    yield chunk
+        finally:
+            snapshot.unlink(missing_ok=True)
+
+    return Response(
+        stream(),
+        mimetype="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename={DATABASE_NAME}",
+            "Content-Length": str(snapshot.stat().st_size),
+        },
+    )
+
+
 if __name__ == "__main__":
-    init_database()
+    setup_storage()
     threading.Thread(target=mqtt_worker, daemon=True).start()
     threading.Thread(target=weather_worker, daemon=True).start()
     threading.Thread(target=cleanup_worker, daemon=True).start()

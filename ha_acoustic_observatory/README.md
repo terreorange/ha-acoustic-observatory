@@ -39,6 +39,16 @@ Two numbers summarize the result:
 
 Windy buckets are excluded by default, and shown as faded points when included. Wind raises the low-frequency level on its own, so leaving it in weakens the fit and invites the objection that you are simply measuring the weather.
 
+## Where the Data Lives
+
+The measurement history is a SQLite database stored in the add-on's mapped configuration directory: `/config/acoustic_observatory.sqlite3` inside the container, reachable from the host as `addon_configs/<slug>/acoustic_observatory.sqlite3` through File Editor or Samba.
+
+This matters. Earlier versions kept the database in `/data`, which Home Assistant destroys when an add-on is uninstalled — including when the uninstall dialog offers to keep the add-on data, since that option covers the configuration directory rather than `/data`. A database left there is lost on reinstall, with no warning. Versions from 0.12.0 move it once, automatically, on the first start: the copy is checked to hold the same number of spectra before the original is deleted, and a migration that fails leaves the original in place and reports the problem in the "Base de donnees" panel.
+
+That panel also shows whether the current location survives a reinstall, and offers an **Exporter la base** link that streams a consistent snapshot you can keep off the machine. Home Assistant's own full backups include the add-on data as well, but an export is the quickest independent copy — and the only one you control the timing of.
+
+Retention is enforced at every start and then on the `database_cleanup_interval_hours` cadence, so raising `spectrum_retention_days` only preserves data that has not already been pruned. Raise it before you need the history, not after.
+
 ## Analysing a Past Event
 
 Nuisances rarely happen while you are watching the dashboard. When something has already occurred — a test run, a delivery, a night shift — the "Analyse d'un evenement passe" panel measures it after the fact, straight from the stored spectra.

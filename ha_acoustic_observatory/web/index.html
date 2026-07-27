@@ -289,6 +289,22 @@
         <div id="sessions-list" class="sessions-list"></div>
       </section>
 
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Base de donnees</h2>
+          <a id="database-export" href="api/database/export">Exporter la base</a>
+        </div>
+        <section class="grid">
+          <div class="tile"><div class="label">Emplacement</div><div id="storage-path" class="value">-</div></div>
+          <div class="tile"><div class="label">Survit a une reinstallation</div><div id="storage-persistent" class="value">-</div></div>
+          <div class="tile"><div class="label">Retention des spectres</div><div id="storage-retention" class="value">-</div></div>
+          <div class="tile"><div class="label">Dernier nettoyage</div><div id="storage-cleanup" class="value">-</div></div>
+        </section>
+        <div class="legend">
+          <span id="storage-note"></span>
+        </div>
+      </section>
+
       <div id="notice" class="notice">En attente des premieres donnees du capteur.</div>
     </main>
 
@@ -357,6 +373,11 @@
       const windowChangesEl = document.getElementById("window-changes");
       const windowSessionLabelEl = document.getElementById("window-session-label");
       const windowSaveEl = document.getElementById("window-save");
+      const storagePathEl = document.getElementById("storage-path");
+      const storagePersistentEl = document.getElementById("storage-persistent");
+      const storageRetentionEl = document.getElementById("storage-retention");
+      const storageCleanupEl = document.getElementById("storage-cleanup");
+      const storageNoteEl = document.getElementById("storage-note");
       const calibrationStorageKey = "ha_acoustic_observatory_db_offset";
       let dbCalibrationOffset = Number(localStorage.getItem(calibrationStorageKey) || 0);
       let lastRawWeightedLevels = null;
@@ -1107,6 +1128,32 @@
         windStateEl.title = `Seuil vent : ${wind.speed_threshold_kmh} km/h. Seuil rafales : ${wind.gust_threshold_kmh} km/h.`;
       }
 
+      function updateStorageState(state) {
+        const storage = state.storage || {};
+        const notes = [];
+        storagePathEl.textContent = storage.database_path || "-";
+        storagePersistentEl.textContent = storage.database_persistent ? "Oui" : "Non";
+        storagePersistentEl.title = storage.database_persistent
+          ? "La base est dans le repertoire de configuration de l'add-on, conserve a la desinstallation."
+          : "La base est dans /data, efface quand l'add-on est desinstalle.";
+        storageRetentionEl.textContent = storage.spectrum_retention_days
+          ? `${storage.spectrum_retention_days} jours`
+          : "-";
+        storageCleanupEl.textContent = storage.last_cleanup_at ? formatTime(storage.last_cleanup_at) : "-";
+        if (storage.migrated_spectra) {
+          notes.push(`${storage.migrated_spectra} mesures ont ete deplacees depuis /data vers cet emplacement durable.`);
+        }
+        if (storage.migration_error) notes.push(storage.migration_error);
+        if (storage.error) notes.push(storage.error);
+        if (!storage.database_persistent) {
+          notes.push("Le repertoire de configuration de l'add-on n'est pas accessible : la base reste dans /data et sera perdue a la desinstallation.");
+        }
+        if (!notes.length) {
+          notes.push("Exportez la base de temps en temps : c'est votre seule copie en dehors des sauvegardes Home Assistant.");
+        }
+        storageNoteEl.textContent = notes.join(" ");
+      }
+
       function updateNotice(state) {
         noticeEl.className = "notice";
         if (state.error) { noticeEl.classList.add("error"); noticeEl.textContent = state.error; return; }
@@ -1165,6 +1212,7 @@
         updateSessionState(state);
         updateWindState(state);
         updateTemperatureState(state);
+        updateStorageState(state);
         updateSignature(state);
         updateWeightedReadings(points);
         topicEl.textContent = state.topic || "-";

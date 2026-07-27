@@ -45,6 +45,13 @@
 - Report per-frequency movement between the two periods.
 - Label a past window as a campaign after the fact.
 
+## v0.12 - Durable Storage
+
+- Store the database in the mapped add-on configuration directory instead of `/data`.
+- Migrate an existing `/data` database once, with verification before removing the source.
+- Expose the storage location and retention in the interface.
+- Export the database from the interface.
+
 ## v0.5 - Detection
 
 - Create a hum detection score.
