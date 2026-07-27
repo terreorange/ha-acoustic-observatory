@@ -39,6 +39,28 @@ Two numbers summarize the result:
 
 Windy buckets are excluded by default, and shown as faded points when included. Wind raises the low-frequency level on its own, so leaving it in weakens the fit and invites the objection that you are simply measuring the weather.
 
+## Analysing a Past Event
+
+Nuisances rarely happen while you are watching the dashboard. When something has already occurred — a test run, a delivery, a night shift — the "Analyse d'un evenement passe" panel measures it after the fact, straight from the stored spectra.
+
+Fill in the event period, then a reference period to compare it against. The *Reference = periode juste avant* button fills the reference with the same duration immediately preceding the event, which is usually the fairest baseline: same day, same weather, same background.
+
+The **frequency band** is the important control. The panel averages only the bins inside the band you select, so choosing the band where the source actually sits sharpens the contrast instead of drowning it in the rest of the spectrum. On a 50 Hz hum, the same two hours can read as a 30 % rise over the full 20-250 Hz range and over 400 % once the band is narrowed onto the peak. Presets cover the common cases:
+
+| Preset | Typical source |
+| --- | --- |
+| 20-50 Hz | Very low rumble, structure-borne vibration |
+| 20-80 Hz | Steady hum, fan and compressor fundamentals |
+| 40-120 Hz | Motors and compressors, including the first harmonic |
+| 100-250 Hz | Upper bass, casing resonances |
+| 20-250 Hz | Everything the firmware publishes |
+
+Set free bounds if none of these fit; the preset switches to *Personnalisee* as soon as you edit a bound.
+
+The results give the mean level of both periods, the gap in absolute, percentage and relative dB terms, the spectral similarity between the two periods, and the frequencies where the level moved most. Two charts show the average spectrum of both periods overlaid, and the band level across the event. If wind was detected during the event, the verdict says so — an increase during a windy period is not evidence about a machine.
+
+Once the analysis looks right, name the period and save it as a campaign. It joins the campaign list with the same CSV export and signature matching as a session recorded live.
+
 ## Home Assistant Entities
 
 With `publish_ha_entities` enabled, the add-on creates a device named *Acoustic Observatory* carrying three sensors: low-band level, thermal sensitivity, and heat-noise correlation. Home Assistant keeps long-term statistics for them, so you can chart months of data and trigger automations.

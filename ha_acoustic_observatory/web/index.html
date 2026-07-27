@@ -43,6 +43,11 @@
       .calibration-form { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) auto auto; gap: 10px; margin-top: 12px; }
       .field { display: grid; gap: 4px; }
       .session-form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto; gap: 10px; margin-top: 12px; }
+      .window-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 12px; }
+      .window-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+      .window-actions input { flex: 1 1 220px; }
+      .changes-list { display: grid; gap: 6px; margin-top: 12px; }
+      .change-row { align-items: center; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 10px; grid-template-columns: minmax(80px, auto) repeat(3, minmax(90px, 1fr)); padding: 8px 10px; }
       .sessions-list { display: grid; gap: 8px; margin-top: 12px; }
       .session-row { align-items: center; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 10px; grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(90px, auto)) auto; padding: 10px; }
       .session-row.active { border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); }
@@ -50,6 +55,7 @@
       a { color: var(--accent); }
       svg { display: block; height: 320px; overflow: visible; width: 100%; }
       canvas { background: color-mix(in srgb, CanvasText 3%, Canvas); border: 1px solid var(--border); border-radius: 6px; display: block; height: 300px; width: 100%; }
+      canvas.compact { height: 200px; margin-top: 10px; }
       .axis, .grid-line { stroke: var(--border); stroke-width: 1; }
       .tick-label { fill: var(--muted); font-size: 11px; }
       .spectrum-area { fill: var(--accent-soft); }
@@ -62,8 +68,9 @@
       @media (max-width: 760px) {
         main { padding: 16px; }
         header, .panel-title-row, .session-actions, .history-controls, .calibration-actions { align-items: flex-start; flex-direction: column; }
-        .calibration-form, .session-form, .session-row { grid-template-columns: 1fr; }
+        .calibration-form, .session-form, .session-row, .change-row { grid-template-columns: 1fr; }
         svg, canvas { height: 260px; }
+        canvas.compact { height: 180px; }
       }
     </style>
   </head>
@@ -144,6 +151,10 @@
                 <option value="10" selected>10 min</option>
                 <option value="30">30 min</option>
                 <option value="60">1 h</option>
+                <option value="180">3 h</option>
+                <option value="360">6 h</option>
+                <option value="720">12 h</option>
+                <option value="1440">24 h</option>
               </select>
             </label>
           </div>
@@ -153,6 +164,86 @@
           <span id="history-mode-label">Spectre : temps de haut en bas</span>
           <span>Bande bleue : vent au-dessus du seuil</span>
           <span id="history-count">0 mesure</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Analyse d'un evenement passe</h2>
+          <span id="window-band-summary" class="label">Bande 20-250 Hz</span>
+        </div>
+
+        <div class="window-form">
+          <label class="field label">Debut de l'evenement
+            <input id="window-start" type="datetime-local" />
+          </label>
+          <label class="field label">Fin de l'evenement
+            <input id="window-end" type="datetime-local" />
+          </label>
+          <label class="field label">Debut de la reference
+            <input id="window-reference-start" type="datetime-local" />
+          </label>
+          <label class="field label">Fin de la reference
+            <input id="window-reference-end" type="datetime-local" />
+          </label>
+        </div>
+
+        <div class="window-form">
+          <label class="field label">Bande analysee
+            <select id="window-band-preset">
+              <option value="20:250" selected>20-250 Hz - tout le grave</option>
+              <option value="20:50">20-50 Hz - tres graves</option>
+              <option value="20:80">20-80 Hz - ronronnement</option>
+              <option value="40:120">40-120 Hz - moteurs et compresseurs</option>
+              <option value="100:250">100-250 Hz - haut du grave</option>
+              <option value="custom">Personnalisee</option>
+            </select>
+          </label>
+          <label class="field label">Grave a partir de (Hz)
+            <input id="window-min-hz" type="number" min="0" max="20000" step="1" value="20" />
+          </label>
+          <label class="field label">Jusqu'a (Hz)
+            <input id="window-max-hz" type="number" min="0" max="20000" step="1" value="250" />
+          </label>
+        </div>
+
+        <div class="window-actions">
+          <button id="window-previous">Reference = periode juste avant</button>
+          <button id="window-analyze" class="primary">Analyser</button>
+        </div>
+
+        <section class="grid">
+          <div class="tile"><div class="label">Niveau moyen evenement</div><div id="window-level" class="value">-</div></div>
+          <div class="tile"><div class="label">Niveau moyen reference</div><div id="window-reference-level" class="value">-</div></div>
+          <div class="tile"><div class="label">Ecart</div><div id="window-delta" class="value">-</div></div>
+          <div class="tile"><div class="label">Ecart relatif</div><div id="window-delta-db" class="value">-</div></div>
+          <div class="tile"><div class="label">Pic dans la bande</div><div id="window-peak" class="value">-</div></div>
+          <div class="tile"><div class="label">Similarite des spectres</div><div id="window-similarity" class="value">-</div></div>
+          <div class="tile"><div class="label">Mesures analysees</div><div id="window-samples" class="value">-</div></div>
+          <div class="tile"><div class="label">Vent pendant l'evenement</div><div id="window-wind" class="value">-</div></div>
+        </section>
+
+        <div class="legend">
+          <span id="window-verdict">Choisissez une periode, une bande de frequences, puis lancez l'analyse.</span>
+        </div>
+
+        <canvas id="window-spectrum" aria-label="Spectre moyen de l'evenement compare a la reference"></canvas>
+        <div class="legend">
+          <span>Ligne bleue : spectre moyen de l'evenement</span>
+          <span>Ligne orange pointillee : spectre moyen de la reference</span>
+        </div>
+
+        <canvas id="window-series" class="compact" aria-label="Niveau de la bande analysee pendant l'evenement"></canvas>
+        <div class="legend">
+          <span>Niveau de la bande analysee pendant l'evenement</span>
+          <span>Ligne orange pointillee : moyenne de la reference</span>
+        </div>
+
+        <div id="window-changes" class="changes-list"></div>
+
+        <div class="window-actions">
+          <input id="window-session-label" placeholder="Nommer cette periode, ex. test entrepot" />
+          <button id="window-save">Enregistrer comme campagne</button>
         </div>
       </section>
 
@@ -242,10 +333,35 @@
       const startSessionEl = document.getElementById("start-session");
       const stopSessionEl = document.getElementById("stop-session");
       const sessionsListEl = document.getElementById("sessions-list");
+      const windowStartEl = document.getElementById("window-start");
+      const windowEndEl = document.getElementById("window-end");
+      const windowReferenceStartEl = document.getElementById("window-reference-start");
+      const windowReferenceEndEl = document.getElementById("window-reference-end");
+      const windowBandPresetEl = document.getElementById("window-band-preset");
+      const windowMinHzEl = document.getElementById("window-min-hz");
+      const windowMaxHzEl = document.getElementById("window-max-hz");
+      const windowBandSummaryEl = document.getElementById("window-band-summary");
+      const windowPreviousEl = document.getElementById("window-previous");
+      const windowAnalyzeEl = document.getElementById("window-analyze");
+      const windowLevelEl = document.getElementById("window-level");
+      const windowReferenceLevelEl = document.getElementById("window-reference-level");
+      const windowDeltaEl = document.getElementById("window-delta");
+      const windowDeltaDbEl = document.getElementById("window-delta-db");
+      const windowPeakEl = document.getElementById("window-peak");
+      const windowSimilarityEl = document.getElementById("window-similarity");
+      const windowSamplesEl = document.getElementById("window-samples");
+      const windowWindEl = document.getElementById("window-wind");
+      const windowVerdictEl = document.getElementById("window-verdict");
+      const windowSpectrumEl = document.getElementById("window-spectrum");
+      const windowSeriesEl = document.getElementById("window-series");
+      const windowChangesEl = document.getElementById("window-changes");
+      const windowSessionLabelEl = document.getElementById("window-session-label");
+      const windowSaveEl = document.getElementById("window-save");
       const calibrationStorageKey = "ha_acoustic_observatory_db_offset";
       let dbCalibrationOffset = Number(localStorage.getItem(calibrationStorageKey) || 0);
       let lastRawWeightedLevels = null;
       let activeSessionId = null;
+      let lastWindowPayload = null;
 
       function formatTime(timestamp) {
         if (!timestamp) return "-";
@@ -539,10 +655,15 @@
         context.fillText(`${maxValue.toFixed(1)}`, 6 * dpr, y(maxValue) + 4 * dpr);
       }
 
-      function drawEmptyHistory(context, dpr) {
+      function drawCanvasMessage(context, dpr, message) {
         context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
         context.font = `${13 * dpr}px system-ui, sans-serif`;
-        context.fillText("En attente d'historique", 16 * dpr, 32 * dpr);
+        context.textAlign = "left";
+        context.fillText(message, 16 * dpr, 32 * dpr);
+      }
+
+      function drawEmptyHistory(context, dpr) {
+        drawCanvasMessage(context, dpr, "En attente d'historique");
       }
 
       function drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, items) {
@@ -655,6 +776,283 @@
           context.fillText(`${temperature.toFixed(1)} C`, x(temperature), height - 12 * dpr);
         }
         context.fillText("Temperature exterieure", left + plotWidth / 2, height - 1 * dpr);
+      }
+
+      function toEpoch(value) {
+        if (!value) return null;
+        const milliseconds = new Date(value).getTime();
+        return Number.isFinite(milliseconds) ? Math.round(milliseconds / 1000) : null;
+      }
+
+      function toLocalInput(epoch) {
+        const date = new Date(epoch * 1000);
+        const pad = (value) => String(value).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      }
+
+      function signed(value, digits = 1) {
+        return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+      }
+
+      function windowBand() {
+        const min = Number(windowMinHzEl.value);
+        const max = Number(windowMaxHzEl.value);
+        return {
+          min: Number.isFinite(min) ? min : 20,
+          max: Number.isFinite(max) ? max : 250,
+        };
+      }
+
+      function updateBandSummary() {
+        const band = windowBand();
+        windowBandSummaryEl.textContent = `Bande ${band.min}-${band.max} Hz`;
+      }
+
+      function applyBandPreset() {
+        if (windowBandPresetEl.value === "custom") return;
+        const [min, max] = windowBandPresetEl.value.split(":");
+        windowMinHzEl.value = min;
+        windowMaxHzEl.value = max;
+        updateBandSummary();
+      }
+
+      function fillPreviousReference() {
+        const start = toEpoch(windowStartEl.value);
+        const end = toEpoch(windowEndEl.value);
+        if (start === null || end === null || end <= start) return;
+        windowReferenceStartEl.value = toLocalInput(start - (end - start));
+        windowReferenceEndEl.value = toLocalInput(start);
+      }
+
+      function initWindowControls() {
+        const now = Math.floor(Date.now() / 1000);
+        const end = now - (now % 60);
+        windowEndEl.value = toLocalInput(end);
+        windowStartEl.value = toLocalInput(end - 3600);
+        fillPreviousReference();
+        updateBandSummary();
+      }
+
+      function windowVerdict(payload) {
+        const test = payload.test || {};
+        const band = `${payload.band.min_hz.toFixed(0)}-${payload.band.max_hz.toFixed(0)} Hz`;
+        if (!test.level) {
+          return "Aucune mesure enregistree sur cette periode. Verifiez les dates, ou la duree de retention de la base.";
+        }
+        if (!payload.comparison) {
+          const peak = test.peak_frequency === null ? "" : ` Pic moyen a ${test.peak_frequency.toFixed(1)} Hz.`;
+          return `${test.sample_count} mesures sur ${band}, niveau moyen ${test.level.mean.toFixed(1)}.${peak} Renseignez une periode de reference pour mesurer l'ecart.`;
+        }
+        const comparison = payload.comparison;
+        const direction = comparison.level_delta >= 0 ? "plus fort" : "plus faible";
+        const percent = comparison.level_percent === null ? "" : ` (${signed(comparison.level_percent, 0)} %)`;
+        const decibels = comparison.delta_db === null ? "" : `, soit ${signed(comparison.delta_db)} dB relatifs`;
+        const strongest = (comparison.changes || [])[0];
+        const peak = strongest && strongest.delta > 0
+          ? ` La hausse est la plus marquee a ${strongest.frequency.toFixed(1)} Hz${strongest.delta_percent === null ? "" : ` (${signed(strongest.delta_percent, 0)} %)`}.`
+          : "";
+        const windy = test.weather ? test.weather.windy_percent : null;
+        const caveat = windy !== null && windy !== undefined && windy >= 25
+          ? ` Attention : du vent a ete detecte sur ${windy.toFixed(0)} % de la periode, une partie de l'ecart peut etre meteo.`
+          : "";
+        return `Sur ${band}, l'evenement est ${direction} que la reference${percent}${decibels}.${peak}${caveat}`;
+      }
+
+      function renderWindowTiles(payload) {
+        const test = payload.test || {};
+        const reference = payload.reference;
+        const comparison = payload.comparison;
+        const dominant = (test.dominant_histogram || [])[0];
+        const windy = test.weather ? test.weather.windy_percent : null;
+        const temperature = test.weather ? test.weather.mean_temperature_c : null;
+        windowLevelEl.textContent = test.level ? test.level.mean.toFixed(1) : "-";
+        windowLevelEl.title = test.level ? `median ${test.level.median.toFixed(1)}, max ${test.level.max.toFixed(1)}` : "";
+        windowReferenceLevelEl.textContent = reference && reference.level ? reference.level.mean.toFixed(1) : "-";
+        windowDeltaEl.textContent = comparison
+          ? `${signed(comparison.level_delta)}${comparison.level_percent === null ? "" : ` (${signed(comparison.level_percent, 0)} %)`}`
+          : "-";
+        windowDeltaDbEl.textContent = comparison && comparison.delta_db !== null ? `${signed(comparison.delta_db)} dB` : "-";
+        windowDeltaDbEl.title = "Rapport des magnitudes FFT, relatif et non calibre";
+        windowPeakEl.textContent = test.peak_frequency === null || test.peak_frequency === undefined ? "-" : `${test.peak_frequency.toFixed(1)} Hz`;
+        windowPeakEl.title = dominant ? `Frequence dominante ${dominant.share_percent.toFixed(0)} % du temps a ${dominant.frequency.toFixed(1)} Hz` : "";
+        windowSimilarityEl.textContent = comparison && comparison.similarity !== null ? `${comparison.similarity.toFixed(1)} %` : "-";
+        windowSimilarityEl.title = "100 % = meme forme de spectre que la periode de reference";
+        windowSamplesEl.textContent = test.sample_count === undefined ? "-" : String(test.sample_count);
+        windowSamplesEl.title = test.sampling_stride > 1
+          ? `Moyennes calculees sur 1 mesure sur ${test.sampling_stride}`
+          : "Toutes les mesures de la periode ont ete analysees";
+        windowWindEl.textContent = windy === null || windy === undefined ? "-" : `${windy.toFixed(0)} % du temps`;
+        windowWindEl.title = temperature === null || temperature === undefined ? "" : `Temperature exterieure moyenne ${temperature.toFixed(1)} C`;
+      }
+
+      function renderWindowChanges(payload) {
+        windowChangesEl.replaceChildren();
+        const changes = payload.comparison ? payload.comparison.changes || [] : [];
+        if (!changes.length) return;
+        for (const change of changes) {
+          const row = document.createElement("div");
+          row.className = "change-row";
+          const percent = change.delta_percent === null ? "" : ` (${signed(change.delta_percent, 0)} %)`;
+          row.innerHTML = `<div><strong>${change.frequency.toFixed(1)} Hz</strong></div>`
+            + `<div class="session-meta">reference ${change.reference.toFixed(1)}</div>`
+            + `<div class="session-meta">evenement ${change.test.toFixed(1)}</div>`
+            + `<div>${signed(change.delta)}${percent}</div>`;
+          windowChangesEl.appendChild(row);
+        }
+      }
+
+      function strokePolyline(context, coordinates, color, dpr, dashed) {
+        if (coordinates.length < 2) return;
+        context.save();
+        context.strokeStyle = color;
+        context.lineWidth = 2 * dpr;
+        if (dashed) context.setLineDash([6 * dpr, 5 * dpr]);
+        context.beginPath();
+        coordinates.forEach(([x, y], index) => (index === 0 ? context.moveTo(x, y) : context.lineTo(x, y)));
+        context.stroke();
+        context.restore();
+      }
+
+      function drawPlotGrid(context, dpr, left, top, plotWidth, plotHeight) {
+        context.strokeStyle = cssVariable("--border");
+        context.lineWidth = dpr;
+        for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+          const y = top + plotHeight - ratio * plotHeight;
+          context.beginPath();
+          context.moveTo(left, y);
+          context.lineTo(left + plotWidth, y);
+          context.stroke();
+        }
+        context.strokeRect(left, top, plotWidth, plotHeight);
+      }
+
+      function drawWindowSpectrum(payload) {
+        const { context, width, height, dpr } = prepareCanvas(windowSpectrumEl);
+        const test = (payload.test && payload.test.average_spectrum) || [];
+        const reference = (payload.reference && payload.reference.average_spectrum) || [];
+        if (!test.length && !reference.length) return drawCanvasMessage(context, dpr, "Aucun spectre sur cette periode");
+        const minHz = payload.band.min_hz;
+        const maxHz = payload.band.max_hz;
+        let maxMagnitude = 1;
+        for (const point of test.concat(reference)) maxMagnitude = Math.max(maxMagnitude, point.magnitude);
+        const left = 56 * dpr;
+        const right = 16 * dpr;
+        const top = 16 * dpr;
+        const bottom = 30 * dpr;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const x = (frequency) => left + ((frequency - minHz) / Math.max(1e-6, maxHz - minHz)) * plotWidth;
+        const y = (magnitude) => top + plotHeight - (magnitude / maxMagnitude) * plotHeight;
+        drawPlotGrid(context, dpr, left, top, plotWidth, plotHeight);
+        strokePolyline(context, reference.map((point) => [x(point.frequency), y(point.magnitude)]), cssVariable("--warn"), dpr, true);
+        strokePolyline(context, test.map((point) => [x(point.frequency), y(point.magnitude)]), cssVariable("--accent"), dpr, false);
+        context.fillStyle = cssVariable("--muted");
+        context.font = `${11 * dpr}px system-ui, sans-serif`;
+        context.textAlign = "right";
+        context.fillText(maxMagnitude.toFixed(0), left - 8 * dpr, top + 10 * dpr);
+        context.fillText("0", left - 8 * dpr, top + plotHeight);
+        context.textAlign = "center";
+        for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+          const frequency = minHz + ratio * (maxHz - minHz);
+          context.fillText(`${frequency.toFixed(0)} Hz`, x(frequency), height - 10 * dpr);
+        }
+      }
+
+      function drawWindowSeries(payload) {
+        const { context, width, height, dpr } = prepareCanvas(windowSeriesEl);
+        const series = (payload.test && payload.test.series) || [];
+        if (!series.length) return drawCanvasMessage(context, dpr, "Aucune mesure sur cette periode");
+        const referenceLevel = payload.reference && payload.reference.level ? payload.reference.level.mean : null;
+        const left = 56 * dpr;
+        const right = 16 * dpr;
+        const top = 14 * dpr;
+        const bottom = 26 * dpr;
+        const plotWidth = width - left - right;
+        const plotHeight = height - top - bottom;
+        const levels = series.map((point) => point.level);
+        let minLevel = Math.min(...levels);
+        let maxLevel = Math.max(...levels);
+        if (referenceLevel !== null) {
+          minLevel = Math.min(minLevel, referenceLevel);
+          maxLevel = Math.max(maxLevel, referenceLevel);
+        }
+        const span = Math.max(1e-6, maxLevel - minLevel);
+        const first = series[0].captured_at;
+        const last = series[series.length - 1].captured_at;
+        const timeSpan = Math.max(1e-6, last - first);
+        const x = (captured) => left + ((captured - first) / timeSpan) * plotWidth;
+        const y = (level) => top + plotHeight - ((level - minLevel) / span) * plotHeight;
+        drawPlotGrid(context, dpr, left, top, plotWidth, plotHeight);
+        if (referenceLevel !== null) {
+          strokePolyline(context, [[left, y(referenceLevel)], [left + plotWidth, y(referenceLevel)]], cssVariable("--warn"), dpr, true);
+        }
+        strokePolyline(context, series.map((point) => [x(point.captured_at), y(point.level)]), cssVariable("--accent"), dpr, false);
+        context.fillStyle = cssVariable("--muted");
+        context.font = `${11 * dpr}px system-ui, sans-serif`;
+        context.textAlign = "right";
+        context.fillText(maxLevel.toFixed(1), left - 8 * dpr, top + 10 * dpr);
+        context.fillText(minLevel.toFixed(1), left - 8 * dpr, top + plotHeight);
+        context.textAlign = "center";
+        context.fillText(formatTime(first), left + 24 * dpr, height - 8 * dpr);
+        context.fillText(formatTime(last), left + plotWidth - 24 * dpr, height - 8 * dpr);
+      }
+
+      function renderWindow(payload) {
+        lastWindowPayload = payload;
+        renderWindowTiles(payload);
+        renderWindowChanges(payload);
+        windowVerdictEl.textContent = windowVerdict(payload);
+        windowVerdictEl.className = payload.comparison ? "verdict" : "";
+        drawWindowSpectrum(payload);
+        drawWindowSeries(payload);
+      }
+
+      async function analyzeWindow() {
+        const start = toEpoch(windowStartEl.value);
+        const end = toEpoch(windowEndEl.value);
+        if (start === null || end === null) throw new Error("Renseignez le debut et la fin de l'evenement.");
+        if (end <= start) throw new Error("La fin de l'evenement doit suivre son debut.");
+        const band = windowBand();
+        if (band.max <= band.min) throw new Error("La borne haute de la bande doit depasser la borne basse.");
+        const parameters = new URLSearchParams({ start, end, min_hz: band.min, max_hz: band.max });
+        const referenceStart = toEpoch(windowReferenceStartEl.value);
+        const referenceEnd = toEpoch(windowReferenceEndEl.value);
+        if (referenceStart !== null && referenceEnd !== null) {
+          parameters.set("reference_start", referenceStart);
+          parameters.set("reference_end", referenceEnd);
+        }
+        windowAnalyzeEl.disabled = true;
+        try {
+          const response = await fetch(`api/window?${parameters}`);
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Analyse impossible");
+          renderWindow(payload);
+        } finally {
+          windowAnalyzeEl.disabled = false;
+        }
+      }
+
+      async function saveWindowSession() {
+        const label = windowSessionLabelEl.value.trim();
+        if (!label) { windowSessionLabelEl.focus(); return; }
+        const start = toEpoch(windowStartEl.value);
+        const end = toEpoch(windowEndEl.value);
+        if (start === null || end === null || end <= start) throw new Error("Periode d'evenement invalide.");
+        const band = windowBand();
+        const response = await fetch("api/sessions/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label,
+            notes: `Analyse ${band.min}-${band.max} Hz`,
+            started_at: start,
+            ended_at: end,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Enregistrement impossible");
+        windowSessionLabelEl.value = "";
+        await refreshSessions();
       }
 
       function updateSignature(state) {
@@ -855,11 +1253,23 @@
       historyModeEl.addEventListener("change", refreshHistory);
       correlationWindowEl.addEventListener("change", refreshCorrelation);
       correlationExcludeWindEl.addEventListener("change", refreshCorrelation);
+      windowBandPresetEl.addEventListener("change", applyBandPreset);
+      for (const element of [windowMinHzEl, windowMaxHzEl]) {
+        element.addEventListener("input", () => {
+          windowBandPresetEl.value = "custom";
+          updateBandSummary();
+        });
+      }
+      windowPreviousEl.addEventListener("click", fillPreviousReference);
+      windowAnalyzeEl.addEventListener("click", () => analyzeWindow().catch((error) => alert(error.message)));
+      windowSaveEl.addEventListener("click", () => saveWindowSession().catch((error) => alert(error.message)));
       window.addEventListener("resize", () => {
         refreshHistory();
         refreshCorrelation();
+        if (lastWindowPayload) renderWindow(lastWindowPayload);
       });
       updateCalibrationControls();
+      initWindowControls();
       refresh();
       refreshCorrelation();
       setInterval(refresh, 3000);

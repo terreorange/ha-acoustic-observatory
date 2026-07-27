@@ -27,6 +27,13 @@ HOME_ASSISTANT_STATES_URL = "http://supervisor/core/api/states"
 MAX_HISTORY_ROWS = 720
 MAX_WEATHER_ROWS = 720
 SIGNATURE_MIN_SAMPLES = 3
+WINDOW_MAX_SAMPLES = 3000
+WINDOW_SERIES_BUCKETS = 120
+WINDOW_MAX_SPAN_SECONDS = 31 * 24 * 60 * 60
+DEFAULT_BAND_MIN_HZ = 20.0
+DEFAULT_BAND_MAX_HZ = 250.0
+BAND_CHANGE_LIMIT = 5
+DOMINANT_HISTOGRAM_LIMIT = 6
 NUISANCE_KEYWORDS = ("nuisance", "entrepot", "entrepôt", "ronron", "groupe", "froid")
 DEFAULT_WIND_SPEED_THRESHOLD_KMH = 15.0
 DEFAULT_WIND_GUST_THRESHOLD_KMH = 30.0
@@ -164,6 +171,15 @@ def as_int(value):
 
 def bounded_int(value, default, minimum, maximum):
     numeric = as_int(value)
+
+    if numeric is None:
+        numeric = default
+
+    return max(minimum, min(maximum, numeric))
+
+
+def bounded_float(value, default, minimum, maximum):
+    numeric = as_float(value)
 
     if numeric is None:
         numeric = default
@@ -667,25 +683,43 @@ def rows_to_points(rows):
     return items
 
 
-def load_history(minutes):
-    since = time.time() - minutes * 60
+def sampled_spectrum_rows(start, end, max_samples):
+    """Read a time window, striding over ids so a long window stays representative.
 
+    A plain LIMIT would keep only the newest rows and silently drop the start of
+    the window, which is exactly what matters when analysing a past event.
+    """
     with database_lock:
         with sqlite3.connect(DATABASE_PATH) as connection:
             connection.row_factory = sqlite3.Row
+            total = connection.execute(
+                """
+                SELECT COUNT(*) FROM spectra
+                WHERE captured_at >= ? AND captured_at <= ?
+                """,
+                (start, end),
+            ).fetchone()[0]
+
+            stride = max(1, math.ceil(total / max_samples)) if total else 1
             rows = connection.execute(
                 """
                 SELECT captured_at, dominant_frequency, dominant_magnitude,
                        max_magnitude, low_band_magnitude, payload
                 FROM spectra
-                WHERE captured_at >= ?
-                ORDER BY captured_at DESC
-                LIMIT ?
+                WHERE captured_at >= ? AND captured_at <= ? AND (id % ?) = 0
+                ORDER BY captured_at ASC
                 """,
-                (since, MAX_HISTORY_ROWS),
+                (start, end, stride),
             ).fetchall()
 
-    rows.reverse()
+    return rows, total, stride
+
+
+def load_history(minutes):
+    now = time.time()
+    rows, _total, _stride = sampled_spectrum_rows(
+        now - minutes * 60, now, MAX_HISTORY_ROWS
+    )
     return rows_to_points(rows)
 
 
@@ -888,6 +922,266 @@ def weather_periods_from_samples(samples):
         periods.append(current)
 
     return periods
+
+
+def band_points(points, min_hz, max_hz):
+    return [
+        point for point in points
+        if min_hz <= point["frequency"] <= max_hz
+    ]
+
+
+def band_level(points, min_hz, max_hz):
+    """Mean magnitude of the bins that fall inside the analysed frequency band."""
+    selected = band_points(points, min_hz, max_hz)
+
+    if not selected:
+        return None
+
+    return sum(point["magnitude"] for point in selected) / len(selected)
+
+
+def band_dominant_frequency(points, min_hz, max_hz):
+    selected = band_points(points, min_hz, max_hz)
+
+    if not selected:
+        return None
+
+    return max(selected, key=lambda point: point["magnitude"])["frequency"]
+
+
+def level_statistics(values):
+    if not values:
+        return None
+
+    ordered = sorted(values)
+    count = len(ordered)
+
+    def percentile(ratio):
+        position = ratio * (count - 1)
+        lower = math.floor(position)
+        upper = math.ceil(position)
+
+        if lower == upper:
+            return ordered[lower]
+
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+    return {
+        "mean": sum(ordered) / count,
+        "median": percentile(0.5),
+        "p90": percentile(0.9),
+        "min": ordered[0],
+        "max": ordered[-1],
+    }
+
+
+def average_band_spectrum(items, min_hz, max_hz):
+    """Average magnitude per frequency bin over every sample of the window."""
+    totals = {}
+    counts = {}
+
+    for item in items:
+        for point in band_points(item["points"], min_hz, max_hz):
+            frequency = round(point["frequency"], 1)
+            totals[frequency] = totals.get(frequency, 0.0) + point["magnitude"]
+            counts[frequency] = counts.get(frequency, 0) + 1
+
+    return [
+        {"frequency": frequency, "magnitude": totals[frequency] / counts[frequency]}
+        for frequency in sorted(totals)
+    ]
+
+
+def band_level_series(items, min_hz, max_hz, buckets=WINDOW_SERIES_BUCKETS):
+    if not items:
+        return []
+
+    start = items[0]["captured_at"]
+    end = items[-1]["captured_at"]
+    width = max(1e-6, (end - start) / max(1, buckets))
+    grouped = {}
+
+    for item in items:
+        level = band_level(item["points"], min_hz, max_hz)
+
+        if level is None:
+            continue
+
+        index = min(buckets - 1, int((item["captured_at"] - start) / width))
+        bucket = grouped.setdefault(index, {"total": 0.0, "count": 0})
+        bucket["total"] += level
+        bucket["count"] += 1
+
+    return [
+        {
+            "captured_at": start + (index + 0.5) * width,
+            "level": grouped[index]["total"] / grouped[index]["count"],
+        }
+        for index in sorted(grouped)
+    ]
+
+
+def dominant_histogram(items, min_hz, max_hz, limit=DOMINANT_HISTOGRAM_LIMIT):
+    """How often each frequency carried the in-band peak during the window."""
+    counts = {}
+
+    for item in items:
+        frequency = band_dominant_frequency(item["points"], min_hz, max_hz)
+
+        if frequency is None:
+            continue
+
+        rounded = round(frequency, 1)
+        counts[rounded] = counts.get(rounded, 0) + 1
+
+    total = sum(counts.values())
+
+    if not total:
+        return []
+
+    ordered = sorted(counts.items(), key=lambda entry: entry[1], reverse=True)
+
+    return [
+        {
+            "frequency": frequency,
+            "count": count,
+            "share_percent": 100.0 * count / total,
+        }
+        for frequency, count in ordered[:limit]
+    ]
+
+
+def window_weather(start, end):
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT outdoor_temperature_c, windy
+                FROM weather_samples
+                WHERE captured_at >= ? AND captured_at <= ?
+                """,
+                (start, end),
+            ).fetchall()
+
+    if not rows:
+        return {
+            "sample_count": 0,
+            "windy_percent": None,
+            "mean_temperature_c": None,
+        }
+
+    temperatures = [
+        row["outdoor_temperature_c"] for row in rows
+        if row["outdoor_temperature_c"] is not None
+    ]
+
+    return {
+        "sample_count": len(rows),
+        "windy_percent": 100.0 * sum(1 for row in rows if row["windy"]) / len(rows),
+        "mean_temperature_c": (
+            sum(temperatures) / len(temperatures) if temperatures else None
+        ),
+    }
+
+
+def analyze_window(start, end, min_hz, max_hz):
+    rows, total, stride = sampled_spectrum_rows(start, end, WINDOW_MAX_SAMPLES)
+    items = rows_to_points(rows)
+    levels = [
+        level for level in (
+            band_level(item["points"], min_hz, max_hz) for item in items
+        )
+        if level is not None
+    ]
+    average_spectrum = average_band_spectrum(items, min_hz, max_hz)
+    peak = (
+        max(average_spectrum, key=lambda point: point["magnitude"])
+        if average_spectrum else None
+    )
+
+    return {
+        "start": start,
+        "end": end,
+        "duration_seconds": max(0, int(end - start)),
+        "sample_count": total,
+        "analyzed_count": len(items),
+        "sampling_stride": stride,
+        "level": level_statistics(levels),
+        "peak_frequency": peak["frequency"] if peak else None,
+        "peak_magnitude": peak["magnitude"] if peak else None,
+        "dominant_histogram": dominant_histogram(items, min_hz, max_hz),
+        "average_spectrum": average_spectrum,
+        "series": band_level_series(items, min_hz, max_hz),
+        "weather": window_weather(start, end),
+    }
+
+
+def band_changes(test_spectrum, reference_spectrum, limit=BAND_CHANGE_LIMIT):
+    """Per-frequency movement between the two windows, strongest rise first."""
+    reference_by_frequency = {
+        round(point["frequency"], 1): point["magnitude"]
+        for point in reference_spectrum
+    }
+    changes = []
+
+    for point in test_spectrum:
+        frequency = round(point["frequency"], 1)
+
+        if frequency not in reference_by_frequency:
+            continue
+
+        before = reference_by_frequency[frequency]
+        changes.append(
+            {
+                "frequency": frequency,
+                "reference": before,
+                "test": point["magnitude"],
+                "delta": point["magnitude"] - before,
+                "delta_percent": (
+                    100.0 * (point["magnitude"] - before) / before
+                    if before > 0 else None
+                ),
+            }
+        )
+
+    changes.sort(key=lambda change: change["delta"], reverse=True)
+    return changes[:limit]
+
+
+def compare_windows(test, reference):
+    if not test or not reference:
+        return None
+
+    if not test["level"] or not reference["level"]:
+        return None
+
+    test_level = test["level"]["mean"]
+    reference_level = reference["level"]["mean"]
+    test_vector = normalize_vector(spectrum_vector(test["average_spectrum"]))
+    reference_vector = normalize_vector(
+        spectrum_vector(reference["average_spectrum"])
+    )
+
+    return {
+        "level_delta": test_level - reference_level,
+        "level_percent": (
+            100.0 * (test_level - reference_level) / reference_level
+            if reference_level > 0 else None
+        ),
+        "delta_db": (
+            20.0 * math.log10(test_level / reference_level)
+            if reference_level > 0 and test_level > 0 else None
+        ),
+        "similarity": (
+            100.0 * cosine_similarity(test_vector, reference_vector)
+            if test_vector and reference_vector else None
+        ),
+        "changes": band_changes(
+            test["average_spectrum"], reference["average_spectrum"]
+        ),
+    }
 
 
 def load_session_rows(session_id):
@@ -1387,6 +1681,69 @@ def api_history():
     )
 
 
+def window_bounds(start_value, end_value):
+    """Validate a start/end pair given as epoch seconds. Returns (bounds, error)."""
+    start = as_float(start_value)
+    end = as_float(end_value)
+
+    if start is None or end is None:
+        return None, "Start and end timestamps are required"
+
+    if end <= start:
+        return None, "End must be after start"
+
+    if end - start > WINDOW_MAX_SPAN_SECONDS:
+        return None, "Window is longer than 31 days"
+
+    return (start, end), None
+
+
+@app.get("/api/window")
+def api_window():
+    bounds, error = window_bounds(
+        request.args.get("start"), request.args.get("end")
+    )
+
+    if error:
+        return jsonify({"error": error}), 400
+
+    min_hz = bounded_float(
+        request.args.get("min_hz"), DEFAULT_BAND_MIN_HZ, 0.0, 20000.0
+    )
+    max_hz = bounded_float(
+        request.args.get("max_hz"), DEFAULT_BAND_MAX_HZ, 0.0, 20000.0
+    )
+
+    if max_hz <= min_hz:
+        return jsonify({"error": "max_hz must be above min_hz"}), 400
+
+    reference = None
+    has_reference = bool(
+        request.args.get("reference_start") and request.args.get("reference_end")
+    )
+
+    if has_reference:
+        reference_bounds, reference_error = window_bounds(
+            request.args.get("reference_start"), request.args.get("reference_end")
+        )
+
+        if reference_error:
+            return jsonify({"error": f"Reference window: {reference_error}"}), 400
+
+        reference = analyze_window(*reference_bounds, min_hz, max_hz)
+
+    test = analyze_window(*bounds, min_hz, max_hz)
+
+    return jsonify(
+        {
+            "band": {"min_hz": min_hz, "max_hz": max_hz},
+            "test": test,
+            "reference": reference,
+            "comparison": compare_windows(test, reference),
+        }
+    )
+
+
 @app.get("/api/correlation")
 def api_correlation():
     options = current_options()
@@ -1436,6 +1793,43 @@ def api_start_session():
                 VALUES (?, ?, ?)
                 """,
                 (label, notes, time.time()),
+            )
+            session_id = cursor.lastrowid
+
+    session, rows = load_session_rows(session_id)
+    return jsonify({"session": build_session_summary(session, rows)})
+
+
+@app.post("/api/sessions/import")
+def api_import_session():
+    """Label a past window as a campaign, so an event can be reviewed after the fact."""
+    payload = request.get_json(silent=True) or {}
+    label = str(payload.get("label", "")).strip()
+    notes = str(payload.get("notes", "")).strip()
+
+    if not label:
+        return jsonify({"error": "Session label is required"}), 400
+
+    bounds, error = window_bounds(
+        payload.get("started_at"), payload.get("ended_at")
+    )
+
+    if error:
+        return jsonify({"error": error}), 400
+
+    started_at, ended_at = bounds
+
+    if ended_at > time.time() + 60:
+        return jsonify({"error": "Cannot import a window that is not over yet"}), 400
+
+    with database_lock:
+        with sqlite3.connect(DATABASE_PATH) as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO sessions (label, notes, started_at, ended_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (label, notes, started_at, ended_at),
             )
             session_id = cursor.lastrowid
 

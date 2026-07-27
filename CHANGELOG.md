@@ -18,6 +18,27 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - Moved the existing PlatformIO firmware into `firmware/`.
 - Reframed the repository as the full HA Acoustic Observatory project.
 
+## [0.11.0] - 2026-07-27
+
+### Added
+
+- `GET /api/window` endpoint analysing an arbitrary past time window, with an optional reference window and a configurable frequency band.
+- "Analyse d'un evenement passe" panel: pick the event period, a reference period, and the frequency band to weigh, then compare the two.
+- Frequency band presets from 20-50 Hz to 20-250 Hz, plus free minimum and maximum bounds.
+- Per-frequency comparison table showing where the level moved most between the two periods.
+- `POST /api/sessions/import` labelling a past window as a campaign, which makes CSV export and signature matching available after the fact.
+- History windows of 3 h, 6 h, 12 h and 24 h.
+
+### Fixed
+
+- `GET /api/history` returned only the newest 720 rows of the requested window, so any request beyond roughly an hour silently showed only its tail. Long windows are now stride-sampled across the whole span.
+
+### Notes
+
+- Window statistics are computed on at most 3000 spectra; beyond that the window is stride-sampled, and the ratio is reported in the interface.
+- The band level is the mean magnitude of the bins inside the selected band, so narrowing the band onto a suspected source raises the measured contrast instead of diluting it in the rest of the spectrum.
+- Level deltas in dB are ratios of relative FFT magnitudes, not calibrated acoustic levels.
+
 ## [0.10.0] - 2026-07-27
 
 ### Added

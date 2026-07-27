@@ -37,6 +37,14 @@
 - Plot the relationship with a trend line, excluding windy periods.
 - Publish level, thermal sensitivity, and correlation as Home Assistant sensors.
 
+## v0.11 - Retrospective Analysis
+
+- Analyse any past time window without having recorded a session beforehand.
+- Compare an event against a reference period.
+- Restrict the analysis to a chosen frequency band.
+- Report per-frequency movement between the two periods.
+- Label a past window as a campaign after the fact.
+
 ## v0.5 - Detection
 
 - Create a hum detection score.
