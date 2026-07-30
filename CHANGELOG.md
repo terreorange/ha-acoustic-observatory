@@ -12,6 +12,8 @@ The format follows the spirit of Keep a Changelog, and this project uses semanti
 - MIT license.
 - Contribution guide.
 - Architecture, MQTT, firmware, and roadmap documentation.
+- Constant-noise profile in the past-window analysis, with a 0-100 constancy score, level stability, and recurring in-band peak frequency for long-duration hum checks.
+- Scrollable spectrum history for dense and multi-day windows, with 2, 7, and 14 day ranges, day separators, and an in-row marker for the strongest frequency.
 
 ### Changed
 
