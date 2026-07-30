@@ -56,6 +56,8 @@
       svg { display: block; height: 320px; overflow: visible; width: 100%; }
       canvas { background: color-mix(in srgb, CanvasText 3%, Canvas); border: 1px solid var(--border); border-radius: 6px; display: block; height: 300px; width: 100%; }
       canvas.compact { height: 200px; margin-top: 10px; }
+      .history-scroll { max-height: 520px; overflow-y: auto; scrollbar-gutter: stable; }
+      .history-scroll canvas { min-height: 300px; }
       .axis, .grid-line { stroke: var(--border); stroke-width: 1; }
       .tick-label { fill: var(--muted); font-size: 11px; }
       .spectrum-area { fill: var(--accent-soft); }
@@ -155,11 +157,16 @@
                 <option value="360">6 h</option>
                 <option value="720">12 h</option>
                 <option value="1440">24 h</option>
+                <option value="2880">2 jours</option>
+                <option value="10080">7 jours</option>
+                <option value="20160">14 jours</option>
               </select>
             </label>
           </div>
         </div>
-        <canvas id="waterfall" aria-label="Historique spectral et pondere"></canvas>
+        <div id="history-scroll" class="history-scroll">
+          <canvas id="waterfall" aria-label="Historique spectral et pondere"></canvas>
+        </div>
         <div class="legend">
           <span id="history-mode-label">Spectre : temps de haut en bas</span>
           <span>Bande bleue : vent au-dessus du seuil</span>
@@ -218,6 +225,9 @@
           <div class="tile"><div class="label">Ecart</div><div id="window-delta" class="value">-</div></div>
           <div class="tile"><div class="label">Ecart relatif</div><div id="window-delta-db" class="value">-</div></div>
           <div class="tile"><div class="label">Pic dans la bande</div><div id="window-peak" class="value">-</div></div>
+          <div class="tile"><div class="label">Constance</div><div id="window-constancy" class="value">-</div></div>
+          <div class="tile"><div class="label">Stabilite du niveau</div><div id="window-stability" class="value">-</div></div>
+          <div class="tile"><div class="label">Pic recurrent</div><div id="window-recurring-peak" class="value">-</div></div>
           <div class="tile"><div class="label">Similarite des spectres</div><div id="window-similarity" class="value">-</div></div>
           <div class="tile"><div class="label">Mesures analysees</div><div id="window-samples" class="value">-</div></div>
           <div class="tile"><div class="label">Vent pendant l'evenement</div><div id="window-wind" class="value">-</div></div>
@@ -340,6 +350,7 @@
       const noticeEl = document.getElementById("notice");
       const chartEl = document.getElementById("chart");
       const waterfallEl = document.getElementById("waterfall");
+      const historyScrollEl = document.getElementById("history-scroll");
       const historyModeEl = document.getElementById("history-mode");
       const historyWindowEl = document.getElementById("history-window");
       const historyModeLabelEl = document.getElementById("history-mode-label");
@@ -364,6 +375,9 @@
       const windowDeltaEl = document.getElementById("window-delta");
       const windowDeltaDbEl = document.getElementById("window-delta-db");
       const windowPeakEl = document.getElementById("window-peak");
+      const windowConstancyEl = document.getElementById("window-constancy");
+      const windowStabilityEl = document.getElementById("window-stability");
+      const windowRecurringPeakEl = document.getElementById("window-recurring-peak");
       const windowSimilarityEl = document.getElementById("window-similarity");
       const windowSamplesEl = document.getElementById("window-samples");
       const windowWindEl = document.getElementById("window-wind");
@@ -387,6 +401,15 @@
       function formatTime(timestamp) {
         if (!timestamp) return "-";
         return new Date(timestamp * 1000).toLocaleTimeString();
+      }
+
+      function formatDate(timestamp) {
+        if (!timestamp) return "-";
+        return new Date(timestamp * 1000).toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
+      }
+
+      function dayKey(timestamp) {
+        return new Date(timestamp * 1000).toDateString();
       }
 
       function formatAge(seconds) {
@@ -595,9 +618,14 @@
       }
 
       function drawWaterfall(items, windPeriods = []) {
+        const previousScrollTop = historyScrollEl.scrollTop;
+        const wasPinnedToBottom = historyScrollEl.scrollTop + historyScrollEl.clientHeight >= historyScrollEl.scrollHeight - 8;
+        const rowHeightCss = 3;
+        const canvasHeightCss = Math.max(300, 36 + items.length * rowHeightCss);
+        waterfallEl.style.height = `${canvasHeightCss}px`;
         const { context, width, height, dpr } = prepareCanvas(waterfallEl);
         historyCountEl.textContent = `${items.length} mesure${items.length > 1 ? "s" : ""}`;
-        historyModeLabelEl.textContent = "Spectre : temps de haut en bas, couleur claire = intensite plus forte";
+        historyModeLabelEl.textContent = "Spectre : temps de haut en bas, trait orange = frequence la plus forte de la ligne";
         if (!items.length) return drawEmptyHistory(context, dpr);
         const frequencies = [...new Set(items.flatMap((item) => item.points.map((point) => point.frequency)))].sort((a, b) => a - b);
         const maxMagnitude = Math.max(1, ...items.flatMap((item) => item.points.map((point) => point.magnitude)));
@@ -618,12 +646,48 @@
           });
         });
         drawWindOverlay(context, dpr, left, top, plotWidth, plotHeight, items, windPeriods, "vertical-time");
+        context.save();
+        context.fillStyle = cssVariable("--warn");
+        items.forEach((item, rowIndex) => {
+          const peak = (item.points || []).reduce((best, point) => (
+            !best || point.magnitude > best.magnitude ? point : best
+          ), null);
+          if (!peak) return;
+          const columnIndex = frequencies.indexOf(peak.frequency);
+          if (columnIndex < 0) return;
+          const x = left + columnIndex * columnWidth;
+          const y = top + rowIndex * rowHeight;
+          context.fillRect(x, y, Math.max(2 * dpr, Math.ceil(columnWidth)), Math.max(1 * dpr, Math.ceil(rowHeight)));
+        });
+        context.restore();
+        context.save();
+        context.strokeStyle = cssVariable("--border");
+        context.fillStyle = cssVariable("--muted");
+        context.lineWidth = dpr;
+        context.font = `${11 * dpr}px system-ui, sans-serif`;
+        context.textAlign = "right";
+        let previousDay = dayKey(items[0].captured_at);
+        items.forEach((item, rowIndex) => {
+          const currentDay = dayKey(item.captured_at);
+          if (rowIndex > 0 && currentDay !== previousDay) {
+            const y = top + rowIndex * rowHeight;
+            context.beginPath();
+            context.moveTo(left, y);
+            context.lineTo(left + plotWidth, y);
+            context.stroke();
+            context.fillText(formatDate(item.captured_at), left - 8 * dpr, y + 4 * dpr);
+          }
+          previousDay = currentDay;
+        });
+        context.restore();
         drawHistoryFrame(context, width, height, dpr, left, top, plotWidth, plotHeight, items);
         context.textAlign = "center";
         for (const frequency of [20, 50, 100, 150, 200, 250]) {
           const x = left + ((frequency - 20) / (250 - 20)) * plotWidth;
           context.fillText(`${frequency} Hz`, x, height - 8 * dpr);
         }
+        if (wasPinnedToBottom) historyScrollEl.scrollTop = historyScrollEl.scrollHeight;
+        else historyScrollEl.scrollTop = Math.min(previousScrollTop, historyScrollEl.scrollHeight - historyScrollEl.clientHeight);
       }
 
       function historyValue(item, mode) {
@@ -632,6 +696,8 @@
       }
 
       function drawWeightedHistory(items, windPeriods = []) {
+        waterfallEl.style.height = "300px";
+        historyScrollEl.scrollTop = 0;
         const { context, width, height, dpr } = prepareCanvas(waterfallEl);
         const mode = historyModeEl.value;
         const labels = { a: "dB(A)", c: "dB(C)", ca: "Ecart C-A" };
@@ -854,15 +920,26 @@
         updateBandSummary();
       }
 
+      function constancyLabel(verdict) {
+        if (verdict === "constant") return "constant";
+        if (verdict === "possible") return "probable";
+        if (verdict === "variable") return "variable";
+        return "insuffisant";
+      }
+
       function windowVerdict(payload) {
         const test = payload.test || {};
+        const constancy = test.constancy || {};
         const band = `${payload.band.min_hz.toFixed(0)}-${payload.band.max_hz.toFixed(0)} Hz`;
         if (!test.level) {
           return "Aucune mesure enregistree sur cette periode. Verifiez les dates, ou la duree de retention de la base.";
         }
+        const stable = constancy.score === null || constancy.score === undefined
+          ? ""
+          : ` Constance ${constancy.score.toFixed(0)} / 100 : bruit ${constancyLabel(constancy.verdict)} dans la bande.`;
         if (!payload.comparison) {
           const peak = test.peak_frequency === null ? "" : ` Pic moyen a ${test.peak_frequency.toFixed(1)} Hz.`;
-          return `${test.sample_count} mesures sur ${band}, niveau moyen ${test.level.mean.toFixed(1)}.${peak} Renseignez une periode de reference pour mesurer l'ecart.`;
+          return `${test.sample_count} mesures sur ${band}, niveau moyen ${test.level.mean.toFixed(1)}.${peak}${stable} Renseignez une periode de reference pour mesurer l'ecart.`;
         }
         const comparison = payload.comparison;
         const direction = comparison.level_delta >= 0 ? "plus fort" : "plus faible";
@@ -876,7 +953,7 @@
         const caveat = windy !== null && windy !== undefined && windy >= 25
           ? ` Attention : du vent a ete detecte sur ${windy.toFixed(0)} % de la periode, une partie de l'ecart peut etre meteo.`
           : "";
-        return `Sur ${band}, l'evenement est ${direction} que la reference${percent}${decibels}.${peak}${caveat}`;
+        return `Sur ${band}, l'evenement est ${direction} que la reference${percent}${decibels}.${stable}${peak}${caveat}`;
       }
 
       function renderWindowTiles(payload) {
@@ -884,6 +961,7 @@
         const reference = payload.reference;
         const comparison = payload.comparison;
         const dominant = (test.dominant_histogram || [])[0];
+        const constancy = test.constancy || {};
         const windy = test.weather ? test.weather.windy_percent : null;
         const temperature = test.weather ? test.weather.mean_temperature_c : null;
         windowLevelEl.textContent = test.level ? test.level.mean.toFixed(1) : "-";
@@ -896,6 +974,20 @@
         windowDeltaDbEl.title = "Rapport des magnitudes FFT, relatif et non calibre";
         windowPeakEl.textContent = test.peak_frequency === null || test.peak_frequency === undefined ? "-" : `${test.peak_frequency.toFixed(1)} Hz`;
         windowPeakEl.title = dominant ? `Frequence dominante ${dominant.share_percent.toFixed(0)} % du temps a ${dominant.frequency.toFixed(1)} Hz` : "";
+        windowConstancyEl.textContent = constancy.score === null || constancy.score === undefined ? "-" : `${constancy.score.toFixed(0)} / 100`;
+        windowConstancyEl.title = constancy.verdict
+          ? `Verdict : ${constancyLabel(constancy.verdict)}`
+          : "";
+        windowStabilityEl.textContent = constancy.stable_percent === null || constancy.stable_percent === undefined ? "-" : `${constancy.stable_percent.toFixed(0)} %`;
+        windowStabilityEl.title = constancy.tolerance_db === undefined
+          ? ""
+          : `Part des mesures restant dans +/- ${constancy.tolerance_db.toFixed(1)} dB autour de la mediane`;
+        windowRecurringPeakEl.textContent = constancy.dominant_frequency === null || constancy.dominant_frequency === undefined
+          ? "-"
+          : `${constancy.dominant_frequency.toFixed(1)} Hz`;
+        windowRecurringPeakEl.title = constancy.dominant_share_percent === null || constancy.dominant_share_percent === undefined
+          ? ""
+          : `Pic dominant dans ${constancy.dominant_share_percent.toFixed(0)} % des mesures analysees`;
         windowSimilarityEl.textContent = comparison && comparison.similarity !== null ? `${comparison.similarity.toFixed(1)} %` : "-";
         windowSimilarityEl.title = "100 % = meme forme de spectre que la periode de reference";
         windowSamplesEl.textContent = test.sample_count === undefined ? "-" : String(test.sample_count);

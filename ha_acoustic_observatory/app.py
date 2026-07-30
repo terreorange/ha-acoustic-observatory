@@ -30,8 +30,9 @@ DEFAULT_TOPIC = "atom_echo_noise/spectrum/state"
 STALE_AFTER_SECONDS = 30
 SUPERVISOR_MQTT_URL = "http://supervisor/services/mqtt"
 HOME_ASSISTANT_STATES_URL = "http://supervisor/core/api/states"
-MAX_HISTORY_ROWS = 720
-MAX_WEATHER_ROWS = 720
+MAX_HISTORY_ROWS = 2016
+MAX_WEATHER_ROWS = 2016
+MAX_HISTORY_MINUTES = 14 * 24 * 60
 SIGNATURE_MIN_SAMPLES = 3
 WINDOW_MAX_SAMPLES = 3000
 WINDOW_SERIES_BUCKETS = 120
@@ -40,6 +41,7 @@ DEFAULT_BAND_MIN_HZ = 20.0
 DEFAULT_BAND_MAX_HZ = 250.0
 BAND_CHANGE_LIMIT = 5
 DOMINANT_HISTOGRAM_LIMIT = 6
+CONSTANT_NOISE_TOLERANCE_DB = 3.0
 NUISANCE_KEYWORDS = ("nuisance", "entrepot", "entrepôt", "ronron", "groupe", "froid")
 DEFAULT_WIND_SPEED_THRESHOLD_KMH = 15.0
 DEFAULT_WIND_GUST_THRESHOLD_KMH = 30.0
@@ -812,16 +814,23 @@ def load_weather_samples(minutes):
     with database_lock:
         with sqlite3.connect(DATABASE_PATH) as connection:
             connection.row_factory = sqlite3.Row
+            total = connection.execute(
+                """
+                SELECT COUNT(*) FROM weather_samples
+                WHERE captured_at >= ?
+                """,
+                (since,),
+            ).fetchone()[0]
+            stride = max(1, math.ceil(total / MAX_WEATHER_ROWS)) if total else 1
             rows = connection.execute(
                 """
                 SELECT captured_at, wind_speed_kmh, wind_gust_kmh,
                        outdoor_temperature_c, windy, payload
                 FROM weather_samples
-                WHERE captured_at >= ?
+                WHERE captured_at >= ? AND (id % ?) = 0
                 ORDER BY captured_at ASC
-                LIMIT ?
                 """,
-                (since, MAX_WEATHER_ROWS),
+                (since, stride),
             ).fetchall()
 
     return [
@@ -1135,6 +1144,63 @@ def dominant_histogram(items, min_hz, max_hz, limit=DOMINANT_HISTOGRAM_LIMIT):
     ]
 
 
+def constant_noise_profile(levels, dominant_peaks):
+    """Score how steady a selected frequency band is over a long window."""
+    stats = level_statistics(levels)
+
+    if not stats or stats["median"] <= 0:
+        return {
+            "score": None,
+            "verdict": "insufficient_data",
+            "stable_percent": None,
+            "variation_percent": None,
+            "stable_sample_count": 0,
+            "sample_count": len(levels),
+            "dominant_frequency": None,
+            "dominant_share_percent": None,
+            "tolerance_db": CONSTANT_NOISE_TOLERANCE_DB,
+        }
+
+    tolerance_ratio = math.pow(10.0, CONSTANT_NOISE_TOLERANCE_DB / 20.0)
+    lower = stats["median"] / tolerance_ratio
+    upper = stats["median"] * tolerance_ratio
+    stable_count = sum(1 for level in levels if lower <= level <= upper)
+    stable_percent = 100.0 * stable_count / len(levels)
+    variance = sum(
+        (level - stats["mean"]) * (level - stats["mean"]) for level in levels
+    ) / len(levels)
+    variation_percent = (
+        100.0 * math.sqrt(variance) / stats["mean"]
+        if stats["mean"] > 0 else None
+    )
+    strongest_peak = dominant_peaks[0] if dominant_peaks else None
+    dominant_share = (
+        strongest_peak["share_percent"] if strongest_peak else 0.0
+    )
+    score = 0.65 * stable_percent + 0.35 * dominant_share
+
+    if score >= 75.0:
+        verdict = "constant"
+    elif score >= 50.0:
+        verdict = "possible"
+    else:
+        verdict = "variable"
+
+    return {
+        "score": score,
+        "verdict": verdict,
+        "stable_percent": stable_percent,
+        "variation_percent": variation_percent,
+        "stable_sample_count": stable_count,
+        "sample_count": len(levels),
+        "dominant_frequency": (
+            strongest_peak["frequency"] if strongest_peak else None
+        ),
+        "dominant_share_percent": dominant_share,
+        "tolerance_db": CONSTANT_NOISE_TOLERANCE_DB,
+    }
+
+
 def window_weather(start, end):
     with database_lock:
         with sqlite3.connect(DATABASE_PATH) as connection:
@@ -1183,6 +1249,7 @@ def analyze_window(start, end, min_hz, max_hz):
         max(average_spectrum, key=lambda point: point["magnitude"])
         if average_spectrum else None
     )
+    dominant_peaks = dominant_histogram(items, min_hz, max_hz)
 
     return {
         "start": start,
@@ -1194,7 +1261,8 @@ def analyze_window(start, end, min_hz, max_hz):
         "level": level_statistics(levels),
         "peak_frequency": peak["frequency"] if peak else None,
         "peak_magnitude": peak["magnitude"] if peak else None,
-        "dominant_histogram": dominant_histogram(items, min_hz, max_hz),
+        "dominant_histogram": dominant_peaks,
+        "constancy": constant_noise_profile(levels, dominant_peaks),
         "average_spectrum": average_spectrum,
         "series": band_level_series(items, min_hz, max_hz),
         "weather": window_weather(start, end),
@@ -1749,7 +1817,7 @@ def api_history():
     except ValueError:
         minutes = 10
 
-    minutes = max(1, min(minutes, 24 * 60))
+    minutes = max(1, min(minutes, MAX_HISTORY_MINUTES))
     items = load_history(minutes)
     weather_samples = load_weather_samples(minutes)
 
